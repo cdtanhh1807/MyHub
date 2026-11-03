@@ -1,4 +1,3 @@
-import { Boxes } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Dropdown } from '../../components/Select';
 import type { DriveFile } from '../../types';
@@ -10,5 +9,5 @@ export function WorkspaceSwitcher({ workspaces, selected, onSelect }: { workspac
     // Tra ID trong dữ liệu Drive đã tải, không dùng tên để điều hướng hoặc tạo Workspace.
     const workspace = workspaces.find(item => item.id === id);
     if (workspace) onSelect(workspace);
-  }} trigger={<><span className="switch-icon"><Boxes size={18} /></span><span><small>{t('workspace')}</small><strong>{selected?.name || t('chooseWorkspace')}</strong></span></>} />;
+  }} trigger={<><span className="switch-icon" aria-hidden="true"><span className="workspace-select-icon" /></span><span><small>{t('workspace')}</small><strong>{selected?.name || t('chooseWorkspace')}</strong></span></>} />;
 }

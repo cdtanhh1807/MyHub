@@ -6,6 +6,10 @@
 
 Kết quả kiểm tra và giới hạn xác minh nằm trong [VERIFICATION.md](VERIFICATION.md).
 
+Logo giao diện và favicon dùng chung `frontend/public/myhub_logo.png`. File này là bản sao ảnh người dùng cung cấp tại `data/images/myhub_logo.png`, được đưa vào frontend để phục vụ khi chạy dev và build production. Khi đổi logo, cập nhật bản trong `frontend/public/`; thư mục `data/` vẫn được Git bỏ qua.
+
+Biểu tượng nút chọn Workspace dùng `frontend/public/select_workspace_icon.png`, sao chép từ ảnh trong `data/images/`. CSS dùng độ trong suốt của ảnh làm mặt nạ và lấy màu theo theme để hiển thị rõ trên cả light/dark mode, gồm Panel thu gọn.
+
 ### Cập nhật giao diện và tên thư mục 04/11/2026
 
 - Hai thư mục mã nguồn dùng tên chữ thường `backend/` và `frontend/`. Các lệnh và đường dẫn bên dưới đã được cập nhật, dùng đúng chữ thường trên Linux/WSL2.
