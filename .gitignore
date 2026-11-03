@@ -1,0 +1,16 @@
+.env
+**/.env
+!**/.env.example
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/node_modules/
+**/.npm-cache/
+**/dist/
+**/*.tsbuildinfo
+data/*
+!data/.gitkeep
+*.log
+.DS_Store
+.openai/
