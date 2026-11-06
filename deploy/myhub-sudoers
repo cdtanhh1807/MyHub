@@ -1,0 +1,2 @@
+# Chỉ cho deploy/backup quản lý service MyHub, không cấp shell root hoặc quyền Docker.
+myhub ALL=(root) NOPASSWD: /usr/bin/systemctl restart myhub.service, /usr/bin/systemctl stop myhub.service, /usr/bin/systemctl start myhub.service, /usr/bin/systemctl reset-failed myhub.service

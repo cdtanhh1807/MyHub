@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Body, Depends, Request, Query
 from app.core.streaming import ManagedStreamingResponse
 from app.core.dependencies import current_user, services, file_user
-from app.dtos.contracts import FileRequest, FolderRequest, SaveRequest, TransferRequest, PermissionRequest
+from app.dtos.contracts import FileRequest, FolderRequest, SaveRequest, TransferRequest, PermissionRequest, UploadRequest, UploadChunkRequest
 from app.core.errors import AppError
 
 router = APIRouter(dependencies=[Depends(file_user)])
@@ -68,6 +68,36 @@ async def upload(workspace_id: str, request: Request, parent_id: str, name: str,
         raise AppError('content_length_required', 411)
     dto = FolderRequest(workspace_id=workspace_id, file_id=parent_id, name=name)
     return await services(request).files.upload(dto, request.headers.get('content-type', 'application/octet-stream'), size, request.stream())
+
+
+@router.post('/workspaces/{workspace_id}/uploads', status_code=201)
+async def upload_begin(workspace_id: str, request: Request, body: dict = Body(...), user=Depends(current_user)):
+    """Tạo DTO mở phiên, không nhận ID người dùng từ body."""
+    dto = UploadRequest(workspace_id=workspace_id, file_id=body.get('parent_id', workspace_id),
+        name=body.get('name', ''), size=body.get('size'), mime=body.get('mime', 'application/octet-stream'))
+    return await services(request).uploads.begin(dto, user['id'])
+
+
+@router.get('/workspaces/{workspace_id}/uploads/{upload_id}')
+async def upload_status(workspace_id: str, upload_id: str, request: Request, user=Depends(current_user)):
+    """Đối chiếu byte đã nhận sau khi reload hoặc đứt kết nối."""
+    return await services(request).uploads.status(workspace_id, upload_id, user['id'])
+
+
+@router.put('/workspaces/{workspace_id}/uploads/{upload_id}')
+async def upload_chunk(workspace_id: str, upload_id: str, request: Request, offset: int = Query(ge=0), user=Depends(current_user)):
+    """Content-Length giới hạn từng phần; HTTP body không chứa cả file lớn."""
+    length = request.headers.get('content-length', '')
+    if not length.isdecimal():
+        raise AppError('content_length_required', 411)
+    dto = UploadChunkRequest(workspace_id=workspace_id, upload_id=upload_id, offset=offset, size=int(length))
+    return await services(request).uploads.chunk(dto, user['id'], request.stream())
+
+
+@router.delete('/workspaces/{workspace_id}/uploads/{upload_id}')
+async def upload_cancel(workspace_id: str, upload_id: str, request: Request, user=Depends(current_user)):
+    """Nút hủy thu hồi phiên, không xóa nội dung Drive đã có."""
+    return await services(request).uploads.cancel(workspace_id, upload_id, user['id'])
 
 
 @router.get('/workspaces/{workspace_id}/files/{file_id}')

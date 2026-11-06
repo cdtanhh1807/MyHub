@@ -14,6 +14,7 @@ from app.services.workspaces import WorkspaceService
 from app.services.sharing import SharingService
 from app.services.preview import PreviewService
 from app.services.archive import ArchiveService
+from app.services.uploads import UploadService
 from app.utils.files import FOLDER
 
 
@@ -185,4 +186,5 @@ def container(settings):
     scope = ScopeService(settings, drive)
     return SimpleNamespace(mongo=mongo, drive=drive, scope=scope, auth=AuthService(settings, mongo, oauth, drive),
         files=FileService(settings, drive, scope), workspaces=WorkspaceService(settings, mongo, drive, scope),
-        sharing=SharingService(drive, scope), preview=PreviewService(settings, mongo, drive, scope), archive=ArchiveService(settings, drive, scope))
+        sharing=SharingService(drive, scope), preview=PreviewService(settings, mongo, drive, scope), archive=ArchiveService(settings, drive, scope),
+        uploads=UploadService(settings, mongo, drive, scope))

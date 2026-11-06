@@ -3,6 +3,8 @@ import { initReactI18next } from 'react-i18next';
 
 // Mọi chuỗi giao diện dùng khóa chung; mã lỗi backend được dịch tại đây.
 const vi = {
+  upload_expired: 'Phiên tải lên đã hết hạn. Chọn lại file để tạo phiên mới.', upload_not_found: 'Không tìm thấy phiên tải lên. Chọn lại file để thử lại.',
+  upload_offset_mismatch: 'Tiến độ tải lên thay đổi. Chọn lại file để tiếp tục.', upload_size_mismatch: 'Dung lượng dữ liệu tải lên không khớp.',
   tagline: 'Không gian riêng. Kết nối mọi nơi.', workspaces: 'Không gian làm việc', files: 'Tệp tin', trash: 'Thùng rác', account: 'Tài khoản',
   welcome: 'Chào mừng trở lại', workspaceSubtitle: 'Chọn một không gian để tiếp tục công việc của bạn.',
   private: 'KHÔNG GIAN CÁ NHÂN', drivePowered: 'Lưu trữ trên Google Drive', newWorkspace: 'Tạo không gian', newFolder: 'Tạo thư mục',
@@ -59,6 +61,8 @@ const vi = {
   invalid_drive_root: 'Folder gốc Drive không hợp lệ hoặc đang trong thùng rác. Kiểm tra root folder ID.', drive_scope_missing: 'Chưa cấp đủ quyền Drive. Hãy kết nối lại và đồng ý quyền truy cập Drive.',
 };
 const en: Record<keyof typeof vi, string> = {
+  upload_expired: 'The upload session expired. Select the file again to start a new session.', upload_not_found: 'Upload session not found. Select the file again to retry.',
+  upload_offset_mismatch: 'Upload progress changed. Select the file again to resume.', upload_size_mismatch: 'The uploaded byte count does not match.',
   tagline: 'Your space. Connected everywhere.', workspaces: 'Workspaces', files: 'Files', trash: 'Trash', account: 'Account',
   welcome: 'Welcome back', workspaceSubtitle: 'Pick a workspace and get back to your flow.',
   private: 'YOUR PERSONAL HUB', drivePowered: 'Stored on Google Drive', newWorkspace: 'New workspace', newFolder: 'New folder',

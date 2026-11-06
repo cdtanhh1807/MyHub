@@ -8,7 +8,7 @@ from pathlib import Path
 from bson import json_util
 from _runtime import runtime
 
-SKIPPED = {'refresh_sessions', 'oauth_states'}
+SKIPPED = {'refresh_sessions', 'oauth_states', 'upload_sessions'}
 
 
 def read_backup(path):

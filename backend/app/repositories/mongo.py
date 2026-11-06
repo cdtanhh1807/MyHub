@@ -15,6 +15,7 @@ class MongoRepository:
         await self.client.admin.command('ping')
         await self.db.refresh_sessions.create_index('expires_at', expireAfterSeconds=0)
         await self.db.oauth_states.create_index('expires_at', expireAfterSeconds=0)
+        await self.db.upload_sessions.create_index('expires_at', expireAfterSeconds=0)
 
     async def get(self, collection, key):
         """Tra document bằng ID cố định, trả model thô cho Service."""
@@ -65,3 +66,4 @@ class MongoRepository:
         """Restore hoàn tất → thu hồi phiên/state hiện tại; người dùng phải đăng nhập lại."""
         await self.db.refresh_sessions.delete_many({})
         await self.db.oauth_states.delete_many({})
+        await self.db.upload_sessions.delete_many({})

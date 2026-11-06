@@ -35,7 +35,7 @@
 5. Tách `config`, `utils` và các nhóm chức năng khác vào thư mục riêng theo chức năng.
 6. Mỗi hàm hoặc đoạn code phải có chú thích bằng **tiếng Việt**, giải thích mục đích và luồng xử lý (flow). Đặt tên biến và hàm bằng **tiếng Anh**.
 7. Không gán cứng bí mật trong bất kỳ file nào được push lên GitHub.
-8. Phiên bản đầu không tự động hóa việc chạy hệ thống: người dùng tự tạo/start container, chạy backend và chạy frontend. Không tự thêm cơ chế tự động khởi chạy khi chưa được yêu cầu.
+8. Local giữ cách chạy thủ công của phiên bản đầu. Người dùng đã yêu cầu CI/CD và tự khởi chạy trên VPS ngày 06/11/2026: production dùng `deploy/` và `.github/workflows/myhub.yml`. Không áp dụng tự khởi chạy production vào máy local.
 
 ## Kiểm tra
 

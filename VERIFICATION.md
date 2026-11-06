@@ -1,5 +1,15 @@
 # Kết quả kiểm tra MyHub v0.1
 
+## Chuẩn bị VPS/CI/CD và upload chia nhỏ — 06/11/2026
+
+- Backend: **50 passed, 1 skipped** trên Windows/Python 3.13. Test RAR tùy chọn chưa đặt đường dẫn nên skip.
+- Frontend TypeScript + production build thành công. **11 kiểm thử Edge đạt**: 10 luồng cũ (upload đổi sang session) và 1 luồng file 104 MiB + 7 byte, có lỗi 503 sau khi server nhận phần đầu; các request đúng 8 MiB và phần cuối 7 byte, không gửi trùng dữ liệu.
+- Transport Google giả lập kiểm tra 104 MiB/13 phần, hash dữ liệu, resume sau mất phản hồi và tạo lại UploadService, owner/scope, Content-Length, offset, alignment, session URL/Range, hết hạn, file rỗng và replay sau hoàn tất.
+- Thêm bộ cấu hình production trong `deploy/`, hướng dẫn ở `deploy/DEPLOYMENT.md` và workflow GitHub Actions. Kiểm tra Bash syntax cho script bằng Git Bash.
+- Actionlint đạt. CI GitHub Actions trên Ubuntu 22.04/Python 3.13.18 đạt backend tests, frontend build và 11 Edge tests tại lượt [42166049473](https://github.com/cdtanhh1807/MyHub/actions/runs/42166049473). Nhãn điều hướng được bổ sung khoảng trống cho font fallback Linux. Deploy bị skip vì đây là PR và chưa bật production.
+- Các kiểm thử trên chưa gọi Drive thật, MongoDB thật, tunnel hoặc VPS. Chưa nghiệm thu production, quyền systemd/Nginx, SSH deploy hay rollback thực tế; cần kiểm tra theo hướng dẫn trên VPS trước khi xem CI/CD hoàn tất.
+- Ba `.env` cá nhân không được sửa hoặc đưa vào source/artifact. Lần chuyển đầu theo lựa chọn người dùng: dùng Drive root cũ và MongoDB VPS mới, không restore database local.
+
 ## Cập nhật 04/11/2026 — tên thư mục và giao diện
 
 - Thư mục thực tế là `backend/` và `frontend/`; đã rà soát mã nguồn, cấu hình mẫu, test, tài liệu và script venv. Không còn tham chiếu tên thư mục viết hoa trong các file dự án được duy trì.

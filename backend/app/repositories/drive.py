@@ -1,6 +1,7 @@
 """Drive REST repository: CRUD, phân trang và truyền byte theo luồng."""
 import asyncio
 import time
+import re
 from collections.abc import AsyncIterator
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -101,6 +102,50 @@ class DriveRepository:
     async def copy(self, file_id, parent, name):
         """Sao chép file ngay trên Drive, không tải nội dung về máy backend."""
         return (await self.request('POST', f'files/{drive_id(file_id)}/copy', json={'name': name, 'parents': [drive_id(parent)]}, params={'fields': FIELDS})).json()
+
+    async def begin_upload(self, parent, name, mime, size):
+        """Mở phiên resumable; URL chỉ lưu mã hóa ở server, không trả cho browser."""
+        response = await self.client.post(UPLOAD, params={'uploadType': 'resumable', 'fields': FIELDS},
+            headers={'Authorization': f'Bearer {await self.access_token()}', 'X-Upload-Content-Type': mime,
+                'X-Upload-Content-Length': str(size)}, json={'name': name, 'parents': [drive_id(parent)]})
+        self.check(response)
+        location = response.headers.get('location', '')
+        self.validate_upload_url(location)
+        return location
+
+    @staticmethod
+    def validate_upload_url(location):
+        """Chỉ chấp nhận endpoint upload cố định của Google, chặn URL tùy ý/redirect."""
+        from urllib.parse import urlsplit
+        parsed = urlsplit(location)
+        if parsed.scheme != 'https' or parsed.netloc != 'www.googleapis.com' or parsed.path != '/upload/drive/v3/files':
+            raise AppError('invalid_upload_session', 502)
+
+    async def upload_part(self, location, size, offset=None, content=b'', mime='application/octet-stream'):
+        """PUT một phần hoặc hỏi offset bằng PUT rỗng; giữ 308 để đọc Range chính xác."""
+        self.validate_upload_url(location)
+        headers = {'Authorization': f'Bearer {await self.access_token()}', 'Content-Type': mime,
+            'Content-Length': str(len(content)), 'Content-Range': f'bytes */{size}'}
+        if offset is not None and content:
+            headers['Content-Range'] = f'bytes {offset}-{offset + len(content) - 1}/{size}'
+        elif offset is not None and size == 0:
+            headers.pop('Content-Range')
+        response = await self.client.put(location, headers=headers, content=content, follow_redirects=False)
+        if response.status_code in (404, 410):
+            raise AppError('upload_expired', 410)
+        if response.status_code == 308:
+            value = response.headers.get('range', '')
+            match = re.fullmatch(r'bytes=0-(\d+)', value)
+            if value and not match:
+                raise AppError('invalid_upload_response', 502)
+            received = int(match[1]) + 1 if match else 0
+            if received > size:
+                raise AppError('invalid_upload_response', 502)
+            return received, None
+        self.check(response)
+        if response.status_code not in (200, 201):
+            raise AppError('invalid_upload_response', 502)
+        return size, response.json()
 
     async def upload(self, parent, name, mime, size, content: AsyncIterator[bytes], file_id=None, google_mime=None):
         """Mở resumable session → truyền raw stream; không spool upload vào đĩa."""

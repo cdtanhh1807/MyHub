@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Plus, Upload, List, Grid2X2, ChevronRight, Home, LockKeyhole, Globe, RefreshCw, X, ArrowDownUp } from 'lucide-react';
 import { api, errorCode } from '../services/api';
+import { uploadFile } from '../services/upload';
 import { useSession } from '../store/session';
 import { usePreferences } from '../hooks/usePreferences';
 import { Actions, Empty, FileIcon, Loading, useFeedback } from '../components/ui';
@@ -45,18 +46,20 @@ export function Files({ onAction }: { onAction: (action: string, file?: DriveFil
   }
   function open(file: DriveFile) { if (file.mimeType === FOLDER) navigateFolder(file.id); else onAction('open', file); }
   async function upload(files: globalThis.FileList | File[]) {
-    // Một queue tuần tự tránh cạnh tranh mạng; mỗi file có XHR upload progress và hủy được.
+    // Queue tuần tự; mỗi file được chia phần nhỏ, có retry/resume và nút hủy riêng.
     if (progress) return;
     const items = Array.from(files as globalThis.FileList);
     const controller = new AbortController(); uploadController.current = controller;
     try {
       for (const [index, file] of items.entries()) {
         setProgress({ name: file.name, percent: 0, index: index + 1, count: items.length });
-        await api.post(`/workspaces/${workspace.id}/upload`, file, { params: { parent_id: folderId, name: file.name, size: file.size },
-          headers: { 'Content-Type': file.type || 'application/octet-stream' }, signal: controller.signal,
-          onUploadProgress: event => setProgress({ name: file.name, percent: Math.min(99, Math.round(100 * (event.loaded / (event.total || file.size || 1)))), index: index + 1, count: items.length }) });
+        await uploadFile(file, workspace.id, folderId, controller.signal,
+          percent => setProgress({ name: file.name, percent, index: index + 1, count: items.length }));
       }
       notify(t('uploaded'));
+    } catch (error) {
+      // Hủy chủ động không hiện lỗi mạng; lỗi khác vẫn giữ checkpoint để thử tiếp cùng file.
+      if (!controller.signal.aborted) throw error;
     } finally { setProgress(null); uploadController.current = null; if (input.current) input.current.value = ''; await client.invalidateQueries({ queryKey: ['files'] }); }
   }
   const actions = (file: DriveFile) => <Actions><button onClick={() => open(file)}>{t('open')}</button><button onClick={() => onAction('share', file)}>{t('share')}</button><button onClick={() => onAction(file.mimeType === FOLDER ? 'archive' : 'download', file)}>{t(file.mimeType === FOLDER ? 'archive' : 'download')}</button><button onClick={() => onAction('rename', file)}>{t('rename')}</button><button onClick={() => onAction('move', file)}>{t('move')}</button>{file.mimeType !== FOLDER && <><button onClick={() => onAction('copy', file)}>{t('copy')}</button><button onClick={() => onAction('history', file)}>{t('history')}</button></>}<button onClick={() => onAction('details', file)}>{t('details')}</button><button className="danger-text" onClick={() => onAction('delete', file)}>{t('delete')}</button></Actions>;

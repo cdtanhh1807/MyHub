@@ -1,5 +1,6 @@
 """Điểm khởi động FastAPI; ghép dependency và ánh xạ lỗi tại biên HTTP."""
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 import httpx
@@ -21,6 +22,7 @@ from app.services.files import FileService
 from app.services.sharing import SharingService
 from app.services.preview import PreviewService
 from app.services.archive import ArchiveService
+from app.services.uploads import UploadService
 from app.controllers import auth, files, workspaces
 
 
@@ -43,7 +45,8 @@ def create_app(settings=None, service_override=None):
                 auth=AuthService(settings, mongo, OAuthRepository(settings, http), drive),
                 workspaces=WorkspaceService(settings, mongo, drive, scope),
                 files=FileService(settings, drive, scope), sharing=SharingService(drive, scope),
-                preview=PreviewService(settings, mongo, drive, scope), archive=ArchiveService(settings, drive, scope), mongo=mongo)
+                preview=PreviewService(settings, mongo, drive, scope), archive=ArchiveService(settings, drive, scope),
+                uploads=UploadService(settings, mongo, drive, scope), mongo=mongo)
             try:
                 await mongo.initialize()
                 yield
@@ -92,7 +95,8 @@ def create_app(settings=None, service_override=None):
     @app.get('/api/v1/health')
     async def health():
         """Liveness không trả bí mật; startup chỉ thành công sau Mongo ping và index."""
-        return {'status': 'ok', 'version': '0.1.0'}
+        release_file = Path(__file__).resolve().parents[2] / 'RELEASE'
+        return {'status': 'ok', 'version': '0.1.0', 'release': release_file.read_text().strip() if release_file.is_file() else 'local'}
 
     for controller in (auth.router, workspaces.router, files.router):
         app.include_router(controller, prefix='/api/v1')
