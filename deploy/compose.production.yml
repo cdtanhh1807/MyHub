@@ -1,0 +1,29 @@
+name: myhub-production
+services:
+  mongodb:
+    image: mongo:8.0.34
+    container_name: myhub-mongodb
+    restart: unless-stopped
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    mem_limit: 1g
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Required}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Required}
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-myhub}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:?Required}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Required}
+    volumes:
+      - /opt/myhub/shared/mongodb:/data/db
+      - /etc/myhub/mongo-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

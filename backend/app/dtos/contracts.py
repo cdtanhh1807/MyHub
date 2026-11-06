@@ -54,6 +54,20 @@ class FolderRequest(FileRequest, NameRequest):
     """Tạo hoặc đổi tên trong Workspace đã xác thực."""
 
 
+class UploadRequest(FolderRequest):
+    """Mở phiên upload; tổng file độc lập kích thước mỗi HTTP request."""
+    size: int = Field(ge=0, le=5 * 1024 ** 4)
+    mime: str = Field(default='application/octet-stream', min_length=1, max_length=200, pattern=r'^[\w.+-]+/[\w.+-]+$')
+
+
+class UploadChunkRequest(BaseModel):
+    """Vị trí và độ dài phần dữ liệu được Controller tạo từ request."""
+    workspace_id: str
+    upload_id: str
+    offset: int = Field(ge=0)
+    size: int = Field(ge=0, le=8 * 1024 * 1024)
+
+
 class DeleteWorkspaceRequest(BaseModel):
     """Hai bước xóa gắn vào snapshot tên + số mục mà người dùng vừa xem."""
     workspace_id: str

@@ -1,0 +1,28 @@
+# Backend một worker trong venv; restart khi VPS boot hoặc process lỗi.
+[Unit]
+Description=MyHub FastAPI
+After=network-online.target docker.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=myhub
+Group=myhub
+WorkingDirectory=/opt/myhub/current/backend
+ExecStart=/opt/myhub/current/backend/.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/myhub/shared/data
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target

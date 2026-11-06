@@ -6,6 +6,8 @@
 
 Kết quả kiểm tra và giới hạn xác minh nằm trong [VERIFICATION.md](VERIFICATION.md).
 
+Triển khai VPS, Cloudflare Tunnel và CI/CD: xem [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md). Production dùng chung hostname `myhub.liamcao.io.vn`; local vẫn chạy thủ công. Upload giao diện dùng phiên resumable với các request tối đa 8 MiB để tải file lớn qua Cloudflare Free; có retry và tiếp tục trong cùng tab khi chọn lại file sau lỗi/reload.
+
 Logo giao diện và favicon dùng chung `frontend/public/myhub_logo.png`. File này là bản sao ảnh người dùng cung cấp tại `data/images/myhub_logo.png`, được đưa vào frontend để phục vụ khi chạy dev và build production. Khi đổi logo, cập nhật bản trong `frontend/public/`; thư mục `data/` vẫn được Git bỏ qua.
 
 Biểu tượng nút chọn Workspace dùng `frontend/public/select_workspace_icon.png`, sao chép từ ảnh trong `data/images/`. CSS dùng độ trong suốt của ảnh làm mặt nạ và lấy màu theo theme để hiển thị rõ trên cả light/dark mode, gồm Panel thu gọn.

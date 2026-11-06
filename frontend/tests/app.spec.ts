@@ -1,8 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, open, unlink } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 // Fixture API chỉ dành cho kiểm thử UI; app runtime luôn gọi backend/Drive thật.
-async function mockApi(page: Page, conflict = false, kind = 'text', multipleWorkspaces = false) {
+async function mockApi(page: Page, conflict = false, kind = 'text', multipleWorkspaces = false, loseUploadAck = false) {
   let preferences = { language: 'vi', theme: 'system', view: 'list', workspace_sort: 'name', direction: 'asc' };
   let workspaces = [{ id: 'ws', name: 'Dự án cá nhân', mimeType: 'application/vnd.google-apps.folder', parents: ['root'], permissions: [], createdTime: '2026-10-01T12:00:00Z' }];
   if (multipleWorkspaces) workspaces.push({ ...workspaces[0], id: 'ws2', name: 'Nghiên cứu' });
@@ -10,6 +11,8 @@ async function mockApi(page: Page, conflict = false, kind = 'text', multipleWork
   let content = '# MyHub\nHello';
   if (kind === 'pdf') file = { ...file, name: 'Guide.pdf', mimeType: 'application/pdf' };
   const uploads: { name: string; bytes: number }[] = [];
+  const chunkSizes: number[] = [];
+  const sessions = new Map<string, { name: string; size: number; offset: number; complete: boolean }>();
   const additional: typeof file[] = [];
   const permissions = [{ id: 'owner', type: 'user', role: 'owner', emailAddress: 'owner@example.com' }, { id: 'friend', type: 'user', role: 'commenter', emailAddress: 'friend@example.com' }];
   let conflictOnce = conflict;
@@ -31,12 +34,33 @@ async function mockApi(page: Page, conflict = false, kind = 'text', multipleWork
       const workspaceId = path.split('/')[2];
       data = { files: workspaceId === 'ws' ? [file, ...additional] : [{ ...file, id: 'text2', name: 'Roadmap.md', parents: [workspaceId] }], breadcrumbs: workspaces.filter(item => item.id === workspaceId) };
     }
-    else if (path === '/workspaces/ws/upload') {
-      const name = new URL(request.url()).searchParams.get('name')!;
-      const bytes = request.postDataBuffer()?.length || 0;
-      uploads.push({ name, bytes });
-      const uploaded = { ...file, id: 'uploaded' + uploads.length, name, size: String(bytes) };
-      additional.push(uploaded); data = uploaded;
+    else if (path === '/workspaces/ws/uploads' && method === 'POST') {
+      const { name, size } = request.postDataJSON();
+      const id = `session${sessions.size}`;
+      sessions.set(id, { name, size, offset: 0, complete: false });
+      data = { data: { upload_id: id, size, offset: 0, complete: false, chunk_size: 8 * 1024 * 1024 } };
+    } else if (path.startsWith('/workspaces/ws/uploads/')) {
+      const id = path.split('/').pop()!;
+      const session = sessions.get(id)!;
+      if (method === 'PUT') {
+        expect(Number(new URL(request.url()).searchParams.get('offset'))).toBe(session.offset);
+        const bytes = request.postDataBuffer()?.length || 0;
+        chunkSizes.push(bytes);
+        expect(bytes).toBeLessThanOrEqual(8 * 1024 * 1024);
+        session.offset += bytes;
+        session.complete = session.offset === session.size;
+        if (session.complete) {
+          uploads.push({ name: session.name, bytes: session.offset });
+          additional.push({ ...file, id, name: session.name, size: String(session.offset) });
+        }
+      }
+      data = { data: { upload_id: id, ...session, chunk_size: 8 * 1024 * 1024 } };
+      if (method === 'PUT' && loseUploadAck) {
+        // Google đã nhận phần đầu nhưng browser thấy lỗi; client phải hỏi offset trước khi gửi tiếp.
+        loseUploadAck = false;
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'upstream_unavailable' } }) });
+        return;
+      }
     }
     else if (path.endsWith('/preview')) data = { data: { kind, preview_url: 'https://drive.google.com/file/d/text/preview', edit_url: 'https://drive.google.com/file/d/text/view' } };
     else if (path.endsWith('/content') && kind === 'pdf') { await route.fulfill({ contentType: 'application/pdf', body: pdfFixture() }); return; }
@@ -54,7 +78,7 @@ async function mockApi(page: Page, conflict = false, kind = 'text', multipleWork
     } else data = { data: {} };
     await route.fulfill({ json: data });
   });
-  return { uploads };
+  return { uploads, chunkSizes };
 }
 
 // PDF ASCII tự tạo có xref hợp lệ để kiểm tra pdf.js/worker bằng trình duyệt thật.
@@ -152,8 +176,8 @@ test('portrait navigation, account sheet, language and dark mode', async ({ page
   expect(sidebar!.x).toBe(0); expect(sidebar!.width).toBeLessThan(220);
 });
 
-test('upload queue sends raw files and refreshes the folder', async ({ page }) => {
-  // Hai file thật trong browser đi qua raw upload với đúng tên và số byte.
+test('upload queue sends resumable chunks and refreshes the folder', async ({ page }) => {
+  // Hai file thật đi qua phiên resumable với đúng tên và tổng số byte.
   const { uploads } = await mockApi(page);
   await page.goto('/');
   await page.getByRole('button', { name: /^Dự án cá nhân/ }).click();
@@ -162,6 +186,27 @@ test('upload queue sends raw files and refreshes the folder', async ({ page }) =
   await expect(page.getByRole('button', { name: 'notes.txt', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'config.json', exact: true })).toBeVisible();
   expect(uploads).toEqual([{ name: 'notes.txt', bytes: 5 }, { name: 'config.json', bytes: 2 }]);
+});
+
+test('upload over 100 MiB resumes after a lost acknowledgement', async ({ page }, testInfo) => {
+  // Dữ liệu thật trong browser chứng minh mỗi request nhỏ hơn giới hạn Cloudflare.
+  test.setTimeout(120000);
+  const { uploads, chunkSizes } = await mockApi(page, false, 'text', false, true);
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Dự án cá nhân/ }).click();
+  const size = 104 * 1024 * 1024 + 7;
+  // Playwright giới hạn buffer upload 50 MB, nên dùng file test tạm thay vì buffer qua RPC.
+  const path = testInfo.outputPath('large.bin');
+  await mkdir(dirname(path), { recursive: true });
+  const handle = await open(path, 'w');
+  await handle.truncate(size);
+  await handle.close();
+  try {
+    await page.locator('input[type=file]').setInputFiles(path);
+    await expect(page.getByText('Đã tải lên', { exact: true })).toBeVisible({ timeout: 90000 });
+    expect(uploads).toEqual([{ name: 'large.bin', bytes: size }]);
+    expect(chunkSizes).toEqual([...Array(13).fill(8 * 1024 * 1024), 7]);
+  } finally { await unlink(path); }
 });
 
 test('PDF viewer renders locally and zooms', async ({ page }) => {
