@@ -54,7 +54,7 @@ Chuyển `data/myhub-vps-setup.zip` từ máy local bằng SCP vào VPS, giải 
 ```bash
 cd /root/myhub-setup
 python3 deploy/init_config.py
-install -d -m 700 /etc/myhub/mongo-init
+install -d -m 755 /etc/myhub/mongo-init
 install -m 600 deploy/compose.production.yml /etc/myhub/compose.production.yml
 install -m 644 mongo-init/01-create-app-user.js /etc/myhub/mongo-init/01-create-app-user.js
 install -d -m 700 /opt/myhub/shared/mongodb
