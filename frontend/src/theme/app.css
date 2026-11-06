@@ -59,3 +59,6 @@
 /* Bỏ ô nền quanh icon; tăng kích thước và bồi nét cùng màu trên cả hai theme. */
 .workspace-switcher .switch-icon{background:transparent;border:0;filter:drop-shadow(.5px 0 0 currentColor) drop-shadow(-.5px 0 0 currentColor) drop-shadow(0 .5px 0 currentColor) drop-shadow(0 -.5px 0 currentColor)}
 .workspace-select-icon{display:block;width:27px;height:27px;flex-shrink:0;background-color:currentColor;-webkit-mask:url('/select_workspace_icon.png') center/contain no-repeat;mask:url('/select_workspace_icon.png') center/contain no-repeat}
+
+/* Font fallback trên Linux rộng hơn; dành thêm chỗ cho nhãn mà không đổi độ rộng Panel. */
+@media(orientation:landscape) and (min-height:601px){.main-navigation .nav-item{column-gap:6px;padding-inline:8px}}

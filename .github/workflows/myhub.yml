@@ -63,6 +63,15 @@ jobs:
           tar -czf "$GITHUB_SHA.tar.gz" -C package .
           sha256sum "$GITHUB_SHA.tar.gz" > "$GITHUB_SHA.tar.gz.sha256"
       - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: check-diagnostics-${{ github.sha }}
+          path: |
+            data/test-results
+            data/previews
+            data/ci-frontend.log
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           name: release-${{ github.sha }}
