@@ -18,7 +18,7 @@ async def backup():
             with gzip.open(partial, 'wt', encoding='utf-8', newline='\n') as output:
                 output.write(json_util.dumps({'format': 'myhub-backup', 'version': 1, 'created_at': datetime.now(timezone.utc)}) + '\n')
                 for collection in sorted(await mongo.collection_names()):
-                    if collection.startswith('_restore_'):
+                    if collection.startswith('_restore_') or collection in {'sync_log', 'drive_sync_state', 'drive_sync_index'}:
                         continue
                     output.write(json_util.dumps({'collection': collection}) + '\n')
                     async for record in mongo.records(collection):

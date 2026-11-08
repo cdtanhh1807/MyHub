@@ -29,6 +29,13 @@
 @media(orientation:landscape) and (max-height:600px){.sidebar{width:185px;padding:16px 12px 10px}.main-column{margin-left:185px}.workspace-switcher{margin:17px 0 18px;padding:8px}.navigation-label{margin-bottom:7px}.nav-item{min-height:37px;padding:8px 11px;font-size:12px}.brand{font-size:21px}.main-content{padding:23px}.topbar{height:53px;padding:0 23px}.private-label{font-size:9px}.main-navigation{gap:3px}.drive-status{padding:8px 4px;font-size:10px}.account-trigger{padding:10px 3px 4px}.sidebar-logout{padding:5px 6px}.workspace-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.page-heading{flex-direction:row;align-items:center}.page-heading h1{font-size:25px}.login-story{padding:25px}.story-copy{padding:20px 0}.story-copy h1{font-size:28px}.folder-art{display:none}.login-panel{padding:20px 30px}.login-form{padding:15px 0}.login-form>p{margin-bottom:20px}.login-welcome-icon{display:none}.login-form h2{font-size:23px}.login-restricted{margin-top:15px}.login-form .oauth-button{min-height:43px}.modal{max-height:94dvh}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition:none!important}}
 
+/* Bảng rộng chỉ cuộn trong vùng riêng; không kéo giãn trang hoặc thanh điều hướng trên điện thoại. */
+.main-column{flex-basis:0;max-width:100%}
+.main-content,.files-page{min-width:0}
+.table-scroll{position:relative;max-width:100%;min-width:0;overscroll-behavior-x:contain}
+.trash-name{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}
+.trash-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(orientation:portrait){.main-column,.collapsed .main-column{width:100%}.main-navigation{grid-template-columns:repeat(4,minmax(0,1fr))}.sidebar,.collapsed .sidebar{max-width:100vw}}
 /* Dropdown được vẽ bằng component chung để nền, góc bo và theme giống control cha trên mọi hệ điều hành. */
 .select-control{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;vertical-align:middle;max-width:100%}
 .select-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}

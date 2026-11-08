@@ -142,7 +142,8 @@ async def test_trash_filter_and_restore_order(container):
     result = await container.files.trash_list('ws')
     assert {file.id for file in result.files} == {'sub', 'text'}
     root = await container.files.trash_list()
-    assert {file.id for file in root.files} == {'ws2'}
+    assert {file.id for file in root.files} == {'ws2', 'sub', 'text', 'other'}
+    assert {file.id: file.workspace_id for file in root.files} == {'ws2': 'ws2', 'sub': 'ws', 'text': 'ws', 'other': 'ws2'}
     with pytest.raises(AppError, match='restore_parent_first'):
         await container.files.restore(FileRequest(workspace_id='ws', file_id='text'))
     await container.files.restore(FileRequest(workspace_id='ws', file_id='sub'))

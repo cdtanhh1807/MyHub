@@ -1,15 +1,15 @@
 """Controller Workspace/settings chỉ tạo DTO và gọi Service."""
 from fastapi import APIRouter, Body, Depends, Request
-from app.core.dependencies import current_user, services
+from app.core.dependencies import current_user, services, device_id
 from app.dtos.contracts import NameRequest, DeleteWorkspaceRequest, SettingsRequest, OrderRequest
 
 router = APIRouter(dependencies=[Depends(current_user)])
 
 
 @router.get('/workspaces')
-async def listing(request: Request, user=Depends(current_user)):
+async def listing(request: Request, user=Depends(current_user), device=Depends(device_id)):
     """Chuyển user ID đã xác thực xuống Service liệt kê Workspace."""
-    return await services(request).workspaces.listing(user['id'])
+    return await services(request).workspaces.listing(user['id'], device)
 
 
 @router.post('/workspaces', status_code=201)
@@ -19,9 +19,9 @@ async def create(request: Request, body: dict = Body(...)):
 
 
 @router.put('/workspaces/order')
-async def order(request: Request, body: dict = Body(...), user=Depends(current_user)):
+async def order(request: Request, body: dict = Body(...), user=Depends(current_user), device=Depends(device_id)):
     """DTO thứ tự được kiểm tra tại biên HTTP rồi truyền xuống Service."""
-    return await services(request).workspaces.order(user['id'], OrderRequest(**body))
+    return await services(request).workspaces.order(user['id'], OrderRequest(**body), device)
 
 
 @router.patch('/workspaces/{workspace_id}')
@@ -44,12 +44,12 @@ async def delete(workspace_id: str, request: Request, body: dict = Body(...), us
 
 
 @router.get('/settings')
-async def settings_get(request: Request, user=Depends(current_user)):
-    """Đọc cài đặt đồng bộ của tài khoản đang đăng nhập."""
-    return await services(request).workspaces.settings_get(user['id'])
+async def settings_get(request: Request, user=Depends(current_user), device=Depends(device_id)):
+    """Đọc cài đặt riêng của tài khoản trên browser hiện tại."""
+    return await services(request).workspaces.settings_get(user['id'], device)
 
 
 @router.put('/settings')
-async def settings_save(request: Request, body: dict = Body(...), user=Depends(current_user)):
+async def settings_save(request: Request, body: dict = Body(...), user=Depends(current_user), device=Depends(device_id)):
     """Controller tạo SettingsRequest, không chuyển body tùy ý tới MongoDB."""
-    return await services(request).workspaces.settings_save(user['id'], SettingsRequest(**body))
+    return await services(request).workspaces.settings_save(user['id'], SettingsRequest(**body), device)

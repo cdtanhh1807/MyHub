@@ -47,7 +47,7 @@ export function Workspaces({ files, onSelect, onAction }: Props) {
     if (!event.over || event.active.id === event.over.id) return;
     const next = arrayMove(ordered, ordered.findIndex(f => f.id === event.active.id), ordered.findIndex(f => f.id === event.over?.id));
     setReordered(next);
-    try { await api.put('/workspaces/order', { ids: next.map(f => f.id) }); await client.invalidateQueries({ queryKey: ['workspaces'] }); }
+    try { await api.put('/workspaces/order', { ids: next.map(f => f.id) }); await client.invalidateQueries({ queryKey: ['workspaces'] }); setReordered(null); }
     catch (error) { setReordered(null); throw error; }
   }
   return <>

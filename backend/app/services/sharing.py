@@ -10,6 +10,7 @@ class SharingService:
     def __init__(self, drive, scope):
         """Nhận adapter Drive và lớp kiểm tra cây thư mục."""
         self.drive, self.scope = drive, scope
+        self.sync = None
 
     async def listing(self, request):
         """Danh sách quyền hiện tại và link Drive để sao chép ngay trong app."""
@@ -19,21 +20,25 @@ class SharingService:
 
     async def create(self, request, permission):
         """Mời email hoặc mở link; chỉ gửi email khi người dùng bật tùy chọn."""
-        await self.scope.file(request.workspace_id, request.file_id)
+        file, _ = await self.scope.file(request.workspace_id, request.file_id)
         body = {'type': permission.type, 'role': permission.role}
         if permission.type == 'user':
             if not permission.email or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', permission.email):
                 raise AppError('invalid_email')
             body['emailAddress'] = permission.email
         result = await self.drive.permissions(request.file_id, 'POST', body=body, notify=permission.notify if permission.type == 'user' else False)
+        if self.sync:
+            await self.sync.file_changed(request.workspace_id, file)
         return ResultDTO(data=result)
 
     async def mutate(self, request, permission_id, permission=None):
         """Chặn sửa/xóa owner; quyền kế thừa do Drive quyết định và trả lỗi nếu không sửa được."""
-        await self.scope.file(request.workspace_id, request.file_id)
+        file, _ = await self.scope.file(request.workspace_id, request.file_id)
         existing = next((p for p in await self.drive.permissions(request.file_id) if p['id'] == permission_id), None)
         if not existing or existing['role'] == 'owner':
             raise AppError('permission_not_editable', 403)
         result = await self.drive.permissions(request.file_id, 'PATCH' if permission else 'DELETE', permission_id,
             {'role': permission.role} if permission else None)
+        if self.sync:
+            await self.sync.file_changed(request.workspace_id, file)
         return ResultDTO(data=result)

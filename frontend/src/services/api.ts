@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useSession } from '../store/session';
+import { deviceId } from './device';
 
 export const API_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
 export const api = axios.create({ baseURL: API_URL, withCredentials: true });
@@ -23,6 +24,7 @@ export async function refreshSession(): Promise<string> {
 
 // Mọi API request đi qua adapter này; thêm Bearer từ bộ nhớ hiện tại.
 api.interceptors.request.use((config) => {
+  config.headers['X-MyHub-Device'] = deviceId;
   const token = useSession.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

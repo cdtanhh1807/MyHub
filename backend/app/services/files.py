@@ -24,6 +24,7 @@ class FileService:
         """Chuẩn bị khóa ghi editor trong tiến trình để chống hai save đồng thời."""
         self.settings, self.drive, self.scope = settings, drive, scope
         self.write_lock = asyncio.Lock()
+        self.sync = None
 
     async def listing(self, workspace_id, folder_id, search='', sort='name', direction='asc'):
         """Lấy con folder hiện tại → tìm tên → sort (folder luôn trước) → DTO."""
@@ -45,21 +46,29 @@ class FileService:
     async def folder(self, request):
         """Tạo thư mục con của folder đã qua scope, không cho ghi vào root hệ thống."""
         await self.scope.folder(request.workspace_id, request.file_id)
-        return FileDTO(**await self.drive.create_folder(request.name, request.file_id))
+        file = await self.drive.create_folder(request.name, request.file_id)
+        if self.sync:
+            await self.sync.file_changed(request.workspace_id, file)
+        return FileDTO(**file)
 
     async def rename(self, request):
         """Workspace root dùng luồng riêng; file/folder con cập nhật tên tại chỗ."""
         await self.scope.file(request.workspace_id, request.file_id)
         if request.file_id == request.workspace_id:
             raise AppError('use_workspace_action')
-        return FileDTO(**await self.drive.update(request.file_id, {'name': request.name}))
+        file = await self.drive.update(request.file_id, {'name': request.name})
+        if self.sync:
+            await self.sync.file_changed(request.workspace_id, file, tree=file['mimeType'] == FOLDER)
+        return FileDTO(**file)
 
     async def trash(self, request):
         """Chỉ soft-delete file/folder con; xóa Workspace bắt buộc hai bước riêng."""
-        await self.scope.file(request.workspace_id, request.file_id)
+        file, _ = await self.scope.file(request.workspace_id, request.file_id)
         if request.file_id == request.workspace_id:
             raise AppError('use_workspace_action')
         await self.drive.update(request.file_id, {'trashed': True})
+        if self.sync:
+            await self.sync.file_changed(request.workspace_id, file, tree=file['mimeType'] == FOLDER, trash=True)
         return ResultDTO(data={'trashed': True})
 
     async def upload(self, request, mime, size, content):
@@ -79,7 +88,10 @@ class FileService:
             if received != size:
                 raise AppError('upload_size_mismatch')
 
-        return FileDTO(**await self.drive.upload(request.file_id, request.name, mime, size, checked()))
+        file = await self.drive.upload(request.file_id, request.name, mime, size, checked())
+        if self.sync:
+            await self.sync.file_changed(request.workspace_id, file)
+        return FileDTO(**file)
 
     async def download(self, request, range_header=None, inline=False, revision_id=None):
         """Scope trước khi mở upstream; Range được giữ nguyên cho video/PDF."""
@@ -138,6 +150,8 @@ class FileService:
                 path = PurePosixPath(name)
                 name = NameRequest(name=f'{path.stem} (copy){path.suffix}').name
             updated = await self.drive.upload(file['parents'][0], name, file['mimeType'], len(content), bytes_stream(content), None if copying else file['id'])
+            if self.sync:
+                await self.sync.file_changed(request.workspace_id, updated)
             return FileDTO(**updated)
 
     async def transfer(self, request):
@@ -154,24 +168,43 @@ class FileService:
             if file['mimeType'] == FOLDER:
                 raise AppError('folder_copy_not_supported', 422)
             result = await self.drive.copy(file['id'], request.target_folder_id, file['name'])
+        if self.sync:
+            await self.sync.file_changed(request.target_workspace_id, result, parent_ids=file.get('parents', []),
+                workspace_ids=[request.workspace_id], tree=file['mimeType'] == FOLDER)
         return FileDTO(**result)
 
     async def trash_list(self, workspace_id=None):
-        """Thùng rác toàn cục chỉ hiện Workspace; trong Workspace chỉ hiện mục thuộc cây đó."""
+        """Gom mọi mục đã xóa trong root, kèm Workspace để khôi phục đúng phạm vi."""
         items = []
         if workspace_id:
             await self.scope.workspace(workspace_id, allow_trashed=True)
+        # Cache metadata trong một lần duyệt để các mục cùng nhánh không gọi Drive lặp lại.
+        cache = {}
+        async def metadata(file_id):
+            """Đọc cha có cache, chỉ giữ dữ liệu trong request hiện tại."""
+            if file_id not in cache:
+                cache[file_id] = await self.drive.get(file_id)
+            return cache[file_id]
+
         for file in await self.drive.trash_candidates():
-            if not workspace_id:
-                if file['mimeType'] == FOLDER and self.settings.google_drive_root_folder_id in file.get('parents', []) and not self.scope.system(file):
-                    items.append(FileDTO(**file))
-            else:
-                try:
-                    await self.scope.file(workspace_id, file['id'], allow_trashed=True)
-                    items.append(FileDTO(**file))
-                except AppError as error:
-                    if error.code not in ('outside_workspace', 'shortcut_not_supported') and error.status != 404:
-                        raise
+            try:
+                current, seen = file, set()
+                for _ in range(128):
+                    if current['id'] in seen or self.scope.system(current) or current['mimeType'] == 'application/vnd.google-apps.shortcut':
+                        break
+                    seen.add(current['id'])
+                    parents = current.get('parents', [])
+                    if parents == [self.settings.google_drive_root_folder_id]:
+                        if current['mimeType'] == FOLDER and (not workspace_id or current['id'] == workspace_id):
+                            items.append(FileDTO(**file, workspace_id=current['id'], workspace_name=current['name']))
+                        break
+                    if len(parents) != 1 or current['id'] == self.settings.google_drive_root_folder_id:
+                        break
+                    current = await metadata(parents[0])
+            except AppError as error:
+                # Mục không còn truy cập được không làm hỏng toàn bộ danh sách; lỗi mạng vẫn báo rõ.
+                if error.status not in (403, 404):
+                    raise
         return ListDTO(files=items)
 
     async def restore(self, request):
@@ -181,7 +214,13 @@ class FileService:
             raise AppError('not_trashed')
         if any(item.get('trashed') for item in path[:-1]):
             raise AppError('restore_parent_first', 409)
-        return FileDTO(**await self.drive.update(file['id'], {'trashed': False}))
+        restored = await self.drive.update(file['id'], {'trashed': False})
+        if self.sync:
+            if file['id'] == request.workspace_id:
+                await self.sync.changed(kind='workspaces', workspace_ids=[request.workspace_id], tree=True, trash=True)
+            else:
+                await self.sync.file_changed(request.workspace_id, restored, tree=file['mimeType'] == FOLDER, trash=True)
+        return FileDTO(**restored)
 
     async def revisions(self, request):
         """Metadata lịch sử của Drive; native Google dùng trình chỉnh sửa gốc để phục hồi."""
@@ -203,6 +242,8 @@ class FileService:
             stream = await self.drive.stream(file['id'], revision_id=revision_id)
             try:
                 result = await self.drive.upload(file['parents'][0], file['name'], file['mimeType'], int(revision['size']), stream.content, file['id'])
+                if self.sync:
+                    await self.sync.file_changed(request.workspace_id, result)
                 return FileDTO(**result)
             finally:
                 await stream.content.aclose()

@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     archive_timeout_seconds: int = Field(default=1800, ge=30)
     seven_zip_path: str = '7z'
     rar_path: str = 'rar'
+    sync_history_size: int = Field(default=256, ge=32, le=1024)
+    sync_heartbeat_seconds: int = Field(default=25, ge=5, le=60)
+    sync_max_connections_per_user: int = Field(default=8, ge=1, le=100)
+    drive_sync_enabled: bool = True
+    drive_sync_interval_seconds: int = Field(default=300, ge=60, le=3600)
+    drive_webhook_enabled: bool = False
     office_preview_rules: dict[str, str] = {'docx': 'pdf', 'xlsx': 'pdf', 'xls': 'pdf', 'pptx': 'pdf', 'ppt': 'pdf'}
 
     @model_validator(mode='after')
@@ -45,6 +51,11 @@ class Settings(BaseSettings):
         Fernet(self.encryption_key.encode())
         if self.frontend_url.startswith('https://') and not self.cookie_secure:
             raise ValueError('HTTPS requires COOKIE_SECURE=true')
+        if self.drive_webhook_enabled:
+            from urllib.parse import urlsplit
+            target = urlsplit(self.backend_url)
+            if target.scheme != 'https' or not target.hostname or target.username or target.password or target.query or target.fragment or target.path not in ('', '/'):
+                raise ValueError('Drive webhook requires a public HTTPS BACKEND_URL without path/query')
         if not self.local_data_dir.is_absolute():
             self.local_data_dir = (BACKEND_DIR / self.local_data_dir).resolve()
         return self

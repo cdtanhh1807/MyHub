@@ -22,6 +22,8 @@ class FileDTO(BaseModel):
     parents: list[str] = []
     trashed: bool = False
     permissions: list[dict] = []
+    workspace_id: str | None = None
+    workspace_name: str | None = None
 
 
 class ListDTO(BaseModel):

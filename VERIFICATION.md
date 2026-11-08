@@ -1,5 +1,24 @@
 # Kết quả kiểm tra MyHub v0.1
 
+## SSE và webhook Drive — 09/11/2026
+
+- Backend: **64 passed, 1 skipped**; RAR CLI chưa có trong môi trường kiểm thử nên bỏ qua test tùy chọn. Có hai cảnh báo deprecation từ dependencies HTTP hiện tại.
+- Frontend: TypeScript + production build thành công; **20 kiểm thử Edge đạt**. Nhóm đa thiết bị dùng HTTP SSE giữ mở thật qua server Node chỉ dành cho test, cùng REST API giả lập; không giả SSE bằng polling/reconnect. Xác minh không có `/sync` polling khi SSE hoạt động, nhiều tab chia sẻ một kết nối, leader chuyển khi tab đóng, burst 20 mutation được gộp, parser xử lý UTF-8/CRLF bị chia từng byte và cache ngoài phạm vi không bị invalidation.
+- Kiểm thử pump với **100 subscriber/20 mutation** xác nhận một lần đọc ring Mongo giả để fan-out, queue có giới hạn và replay/reset đúng. Đây là kiểm tra tính chất thuật toán, **không phải benchmark khả năng VPS hoặc MongoDB thật**.
+- Kiểm thử HTTP ASGI xác minh Bearer, không chấp nhận token trong query, validation cursor/CORS header, SSE không buffer và JWT hết hạn đóng stream/thu hồi slot. Kiểm thử lỗi sync sau khi ghi file, durable cursor qua restart, event riêng theo browser/user và session logout.
+- Kiểm thử webhook/delta giả lập: lọc system/ngoài root, move-out, tombstone không rõ phạm vi, event trùng, callback đến trước watch response, token/resource/channel sai, message number trùng, tự thay channel trước hạn, phân trang, cursor 410, webhook đăng ký lỗi nhưng delta vẫn hoạt động và cursor không tiến khi event chưa lưu bền vững.
+- Không thêm Redis, thư viện runtime hoặc container. Không sửa `.env` cá nhân, đăng ký webhook Google thật, truy cập Mongo/Drive thật hoặc thay VPS trong đợt này. Cần kiểm tra webhook/stream qua tunnel thực tế sau khi người dùng bật production theo [MYHUB_REALTIME_SYNC.md](MYHUB_REALTIME_SYNC.md).
+- Unit production bổ sung `--timeout-graceful-shutdown 15`; phải được root cập nhật một lần theo tài liệu vì CI không tự thay unit. `DRIVE_WEBHOOK_ENABLED` mặc định false, fallback delta 300 giây do một worker backend thực hiện.
+
+## Sửa thùng rác, cài đặt theo thiết bị và đồng bộ — 09/11/2026, lượt trước SSE
+
+- Backend: **53 passed, 1 skipped** trên Windows, dùng venv. Test RAR bỏ qua do chưa đặt `MYHUB_TEST_RAR_PATH` và không có `rar` trong PATH; có cảnh báo deprecation từ các dependencies HTTP hiện tại.
+- TypeScript và build production frontend thành công. **18 kiểm thử Edge đạt** (11 luồng cũ và 7 hồi quy mới, chạy toàn bộ rồi chạy lại nhóm sync sau khi bổ sung kiểm tra xóa folder/Workspace). API giả lập xác minh hai browser context độc lập dùng chung dữ liệu server, cài đặt theme/ngôn ngữ độc lập và giữ sau reload, bảng dài trên màn hình 390×844 không làm giãn trang/navigation, rename/chia sẻ/folder/copy/move/trash/restore/upload tự cập nhật mà không reload.
+- Editor sạch nhận nội dung mới và revision phục hồi; editor đang sửa giữ bản nháp khi thiết bị khác sửa/xóa file hoặc xóa Workspace. URL folder/Workspace đã xóa được điều hướng lại an toàn. Kiểm tra định kỳ bằng đồng hồ browser giả lập phát hiện thay đổi Drive không có revision mới, cùng tình huống mất kết nối/bỏ lỡ thay đổi và backend đổi epoch.
+- Kiểm tra backend dùng kho giả xác minh thùng rác lồng sâu thuộc mọi Workspace, loại trừ ngoài root/system/shortcut/cycle, Workspace nguồn và thứ tự khôi phục cha/con; cài đặt và thứ tự độc lập theo user + browser; `/sync` có xác thực và nhận tín hiệu từ các nhóm mutation, bao gồm upload hoàn tất. Cấp media cookie/đọc dữ liệu không tạo tín hiệu lặp.
+- Frontend kiểm tra revision mỗi 2 giây khi đang mở; đối soát dữ liệu Drive đang xem mỗi 30 giây và khi có mạng/focus/hiển thị lại. Cơ chế hiện tại yêu cầu backend một worker theo cấu hình đã triển khai; không phải thông báo push từ Google Drive và không bảo đảm độ trễ khi thiết bị offline/tab bị OS tạm ngưng.
+- Không gọi OAuth/Drive/MongoDB/VPS thật, không thay `.env`, không commit/push/deploy trong đợt sửa này. Vite phục vụ QA riêng tại cổng 5180 để tránh ảnh hưởng server local cổng 5173 của người dùng.
+
 ## Chuẩn bị VPS/CI/CD và upload chia nhỏ — 06/11/2026
 
 - Backend: **50 passed, 1 skipped** trên Windows/Python 3.13. Test RAR tùy chọn chưa đặt đường dẫn nên skip.

@@ -42,6 +42,8 @@ export function DeleteDialog({ file, workspaceDelete, onClose, onDone }: DialogP
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const impact = useQuery({ queryKey: ['impact', file!.id], enabled: workspaceDelete, queryFn: async () => (await api.get(`/workspaces/${file!.id}/delete-impact`)).data.data as { name: string; count: number; confirmation_token: string } });
+  // Nếu thiết bị khác đổi cây giữa hai bước, bắt buộc xem lại ảnh hưởng và nhập tên lần nữa.
+  useEffect(() => { setStep(1); setName(''); }, [impact.data?.confirmation_token]);
   async function submit() {
     // Snapshot token gắn tên/số mục được gửi cùng xác nhận; thay đổi cây sẽ bị backend chặn.
     setBusy(true);

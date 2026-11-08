@@ -55,9 +55,9 @@ function VideoViewer({ url }: ViewerProps) { return <div className="media-stage"
 function AudioViewer({ url }: ViewerProps) { return <div className="media-stage"><audio src={url} controls preload="metadata" /></div>; }
 
 // Google /preview dùng phiên Google trong browser, nút mở tab mới luôn có sẵn khi iframe không tải.
-function DriveViewer({ previewUrl, editUrl }: ViewerProps) {
+function DriveViewer({ previewUrl, editUrl, file }: ViewerProps) {
   const { t } = useTranslation();
-  return <><p className="viewer-note">{t('drivePreviewHint')} <a href={editUrl} target="_blank" rel="noreferrer">{t('editGoogle')} <ExternalLink size={13} /></a></p><iframe className="drive-frame" title={t('preview')} src={previewUrl} allow="autoplay; fullscreen" referrerPolicy="no-referrer" /></>;
+  return <><p className="viewer-note">{t('drivePreviewHint')} <a href={editUrl} target="_blank" rel="noreferrer">{t('editGoogle')} <ExternalLink size={13} /></a></p><iframe key={`${file.id}:${file.version}`} className="drive-frame" title={t('preview')} src={previewUrl} allow="autoplay; fullscreen" referrerPolicy="no-referrer" /></>;
 }
 
 // Office thử PDF trước; có fallback tự động khi lỗi và nút chuyển thủ công nếu phân trang xấu.
@@ -96,6 +96,19 @@ function TextViewer({ file, workspaceId, setDirty, onChanged, onClose }: ViewerP
   useEffect(() => { let active = true; void load().catch(error => { if (active) setFailure(errorCode(error)); }); return () => { active = false; }; }, [base]);
   useEffect(() => { setDirty(dirty); }, [dirty, setDirty]);
   useEffect(() => {
+    // Metadata được đồng bộ từ thiết bị khác: chỉ tải nội dung mới khi không có bản nháp.
+    if (!loaded || busy || !file.version || file.version === version) return;
+    // Metadata cũ có thể về chậm sau lần tự lưu; không xem version thấp hơn là xung đột mới.
+    if (/^\d+$/.test(file.version) && /^\d+$/.test(version) && BigInt(file.version) <= BigInt(version)) return;
+    if (dirty) { setConflict(true); return; }
+    let active = true;
+    void api.get(base).then(({ data }) => {
+      if (!active) return;
+      setContent(data.data.content); setOriginal(data.data.content); setVersion(data.data.version); setFailure('');
+    }).catch(error => { if (active) setFailure(errorCode(error)); });
+    return () => { active = false; };
+  }, [file.version, version, loaded, busy, dirty, base]);
+  useEffect(() => {
     const language = languages.find(item => item.extensions.includes(file.name.split('.').pop() || ''));
     void language?.load().then(extension => setExtensions([extension]));
   }, [file.name]);
@@ -132,6 +145,8 @@ export default function Viewer({ file, siblings, onClose, onChanged, onSelect }:
   const workspace = useSession(s => s.workspace)!;
   const { run } = useFeedback();
   const [dirty, setDirty] = useState(false);
+  const metadata = useQuery({ queryKey: ['metadata', workspace.id, file.id], queryFn: async () => (await api.get(`/workspaces/${workspace.id}/files/${file.id}`)).data as DriveFile });
+  const current = metadata.data || file;
   const query = useQuery({ queryKey: ['viewer', workspace.id, file.id], queryFn: async () => {
     const [{ data }, url] = await Promise.all([api.get(`/workspaces/${workspace.id}/files/${file.id}/preview`), mediaUrl(workspace.id, file.id, 'content?inline=true')]);
     return { ...data.data, url } as { kind: string; preview_url: string; edit_url: string; url: string };
@@ -146,6 +161,9 @@ export default function Viewer({ file, siblings, onClose, onChanged, onSelect }:
     return () => { clearInterval(timer); window.removeEventListener('myhub:session-refreshed', renew); window.removeEventListener('beforeunload', warn); };
   }, [workspace.id, file.id, dirty]);
   function close() { if (!dirty || confirm(t('discard'))) onClose(); }
-  const Component = VIEWERS[query.data?.kind || 'metadata'] || MetadataViewer;
-  return <Modal title={file.name} wide onClose={close}><div className="viewer-actions"><span className="pill">{t('preview')}</span><div className="row"><a className="text-button" href={query.data?.edit_url || file.webViewLink} target="_blank" rel="noreferrer"><ExternalLink size={15} />{t('editGoogle')}</a><button className="secondary" onClick={() => void run(() => downloadFile(workspace.id, file.id))}><Download size={15} />{t('download')}</button></div></div>{query.isPending ? <Loading /> : query.isError ? <p className="modal-body error-text">{t(errorCode(query.error), { defaultValue: t('error') })}</p> : <Component key={file.id} file={file} workspaceId={workspace.id} url={query.data.url} previewUrl={query.data.preview_url} editUrl={query.data.edit_url} siblings={siblings} setDirty={setDirty} onChanged={onChanged} onSelect={onSelect} onClose={onClose} />}</Modal>;
+  // Giữ loại editor khi đang có bản nháp, kể cả khi thiết bị khác đổi MIME của file.
+  const kind = useRef('metadata');
+  if (!dirty && query.data?.kind) kind.current = query.data.kind;
+  const Component = VIEWERS[kind.current] || MetadataViewer;
+  return <Modal title={current.name} wide onClose={close}><div className="viewer-actions"><span className="pill">{t('preview')}</span><div className="row"><a className="text-button" href={query.data?.edit_url || file.webViewLink} target="_blank" rel="noreferrer"><ExternalLink size={15} />{t('editGoogle')}</a><button className="secondary" onClick={() => void run(() => downloadFile(workspace.id, file.id))}><Download size={15} />{t('download')}</button></div></div>{metadata.isError && <p role="alert" className="modal-body error-text">{t(errorCode(metadata.error), { defaultValue: t('error') })}</p>}{query.isPending ? <Loading /> : query.isError && !query.data ? <p className="modal-body error-text">{t(errorCode(query.error), { defaultValue: t('error') })}</p> : <Component key={file.id} file={current} workspaceId={workspace.id} url={`${query.data.url}&version=${encodeURIComponent(current.version || '')}`} previewUrl={query.data.preview_url} editUrl={query.data.edit_url} siblings={siblings} setDirty={setDirty} onChanged={onChanged} onSelect={onSelect} onClose={onClose} />}</Modal>;
 }

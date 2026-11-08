@@ -11,12 +11,19 @@ class WorkspaceService:
     def __init__(self, settings, mongo, drive, scope):
         """Nhận repository và scope, không phụ thuộc FastAPI."""
         self.settings, self.mongo, self.drive, self.scope = settings, mongo, drive, scope
+        self.sync = None
 
-    async def listing(self, user_id):
+    @staticmethod
+    def preference_key(user_id, device_id=None):
+        """Giữ key cũ cho client cũ; browser mới có vùng cài đặt và thứ tự độc lập."""
+        return f'{user_id}:device:{device_id}' if device_id else user_id
+
+    async def listing(self, user_id, device_id=None):
         """Drive → lọc Workspace → áp dụng cài đặt Mongo → tạo ListDTO."""
         items = [f for f in await self.drive.children(self.settings.google_drive_root_folder_id) if f['mimeType'] == FOLDER and not self.scope.system(f)]
-        preferences = (await self.mongo.get('user_settings', user_id)) or {}
-        order = (await self.mongo.get('workspace_orders', user_id) or {}).get('ids', [])
+        key = self.preference_key(user_id, device_id)
+        preferences = (await self.mongo.get('user_settings', key)) or {}
+        order = (await self.mongo.get('workspace_orders', key) or {}).get('ids', [])
         mode, reverse = preferences.get('workspace_sort', 'name'), preferences.get('direction') == 'desc'
         if mode == 'manual':
             positions = {value: i for i, value in enumerate(order)}
@@ -36,13 +43,19 @@ class WorkspaceService:
     async def create(self, request):
         """Validate tên duy nhất → tạo folder root → trả FileDTO."""
         await self.unique(request.name)
-        return FileDTO(**await self.drive.create_folder(request.name, self.settings.google_drive_root_folder_id))
+        file = await self.drive.create_folder(request.name, self.settings.google_drive_root_folder_id)
+        if self.sync:
+            await self.sync.changed(kind='workspaces', workspace_ids=[file['id']])
+        return FileDTO(**file)
 
     async def rename(self, workspace_id, request):
         """Kiểm tra Workspace và trùng tên rồi cập nhật chính folder Drive."""
         await self.scope.workspace(workspace_id)
         await self.unique(request.name, workspace_id)
-        return FileDTO(**await self.drive.update(workspace_id, {'name': request.name}))
+        file = await self.drive.update(workspace_id, {'name': request.name})
+        if self.sync:
+            await self.sync.changed(kind='workspaces', workspace_ids=[workspace_id], tree=True)
+        return FileDTO(**file)
 
     async def impact(self, workspace_id, user_id):
         """Bước 1 xóa: đếm cây hiện tại và ký snapshot xác nhận có hạn 5 phút."""
@@ -71,24 +84,30 @@ class WorkspaceService:
                 payload.get('snapshot') != self.snapshot(await self.scope.descendants(request.workspace_id)))):
             raise AppError('confirmation_changed', 409)
         await self.drive.update(request.workspace_id, {'trashed': True})
+        if self.sync:
+            await self.sync.changed(kind='workspaces', workspace_ids=[request.workspace_id], tree=True, trash=True)
         return ResultDTO(data={'trashed': True})
 
-    async def settings_get(self, user_id):
-        """Trả cài đặt đồng bộ, bỏ Mongo _id khỏi DTO công khai."""
+    async def settings_get(self, user_id, device_id=None):
+        """Trả cài đặt riêng của browser; không kế thừa theme chia sẻ từ thiết bị khác."""
         from app.dtos.contracts import SettingsRequest
-        values = await self.mongo.get('user_settings', user_id) or {}
+        values = await self.mongo.get('user_settings', self.preference_key(user_id, device_id)) or {}
         return ResultDTO(data=SettingsRequest(**values).model_dump())
 
-    async def settings_save(self, user_id, request):
+    async def settings_save(self, user_id, request, device_id=None):
         """Lưu duy nhất các trường có trong SettingsRequest."""
-        await self.mongo.put('user_settings', user_id, request.model_dump())
+        await self.mongo.put('user_settings', self.preference_key(user_id, device_id), request.model_dump())
+        if self.sync:
+            await self.sync.changed(kind='preferences', user_id=user_id, device_id=device_id or 'legacy')
         return ResultDTO(data=request.model_dump())
 
-    async def order(self, user_id, request):
+    async def order(self, user_id, request, device_id=None):
         """Chỉ nhận ID Workspace thật và không lặp rồi lưu thứ tự MongoDB."""
-        items = await self.listing(user_id)
+        items = await self.listing(user_id, device_id)
         allowed = {f.id for f in items.files}
         if len(set(request.ids)) != len(request.ids) or any(value not in allowed for value in request.ids):
             raise AppError('invalid_workspace_order')
-        await self.mongo.put('workspace_orders', user_id, {'ids': request.ids})
+        await self.mongo.put('workspace_orders', self.preference_key(user_id, device_id), {'ids': request.ids})
+        if self.sync:
+            await self.sync.changed(kind='preferences', user_id=user_id, device_id=device_id or 'legacy')
         return ResultDTO(data={'saved': True})

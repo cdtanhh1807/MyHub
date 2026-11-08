@@ -1,5 +1,7 @@
 # MyHub trên Ubuntu 22.04 — liamcao-vps
 
+Đồng bộ đã chuyển sang SSE. Khi nâng cấp VPS đang chạy, xem [MYHUB_REALTIME_SYNC.md](../MYHUB_REALTIME_SYNC.md), đặc biệt bước cập nhật unit systemd có graceful shutdown và bật webhook Drive. Redis chỉ có hướng dẫn cho tương lai, chưa được triển khai.
+
 Frontend và API dùng chung `https://myhub.liamcao.io.vn`: Nginx tách `/api/` sang backend. `cloudflared` chạy bằng service trên host và gọi `http://127.0.0.1:8080`. Không cần hostname API riêng. Backend vẫn là process riêng, không chạy bên trong frontend.
 
 ## Các file triển khai

@@ -8,6 +8,10 @@ Kết quả kiểm tra và giới hạn xác minh nằm trong [VERIFICATION.md](
 
 Triển khai VPS, Cloudflare Tunnel và CI/CD: xem [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md). Production dùng chung hostname `myhub.liamcao.io.vn`; local vẫn chạy thủ công. Upload giao diện dùng phiên resumable với các request tối đa 8 MiB để tải file lớn qua Cloudflare Free; có retry và tiếp tục trong cùng tab khi chọn lại file sau lỗi/reload.
 
+Nhật ký triển khai đầy đủ, giải thích lệnh, theo dõi realtime, chuyển VPS giữ dữ liệu và chuyển máy dev: [MYHUB_DEPLOY_CICD.md](MYHUB_DEPLOY_CICD.md).
+
+Đồng bộ SSE, bật webhook Drive trên VPS và kế hoạch bổ sung Redis sau này: [MYHUB_REALTIME_SYNC.md](MYHUB_REALTIME_SYNC.md).
+
 Logo giao diện và favicon dùng chung `frontend/public/myhub_logo.png`. File này là bản sao ảnh người dùng cung cấp tại `data/images/myhub_logo.png`, được đưa vào frontend để phục vụ khi chạy dev và build production. Khi đổi logo, cập nhật bản trong `frontend/public/`; thư mục `data/` vẫn được Git bỏ qua.
 
 Biểu tượng nút chọn Workspace dùng `frontend/public/select_workspace_icon.png`, sao chép từ ảnh trong `data/images/`. CSS dùng độ trong suốt của ảnh làm mặt nạ và lấy màu theo theme để hiển thị rõ trên cả light/dark mode, gồm Panel thu gọn.
@@ -23,6 +27,18 @@ Biểu tượng nút chọn Workspace dùng `frontend/public/select_workspace_ic
 **Chạy lại:** mở terminal mới trong `backend/` và `frontend/`, dùng các lệnh ở mục 7. Nếu đang dùng terminal đã kích hoạt venv, thoát rồi kích hoạt lại tại đường dẫn mới. Shortcut, task IDE hoặc script riêng nằm ngoài repo cần tự cập nhật nếu đã ghi cứng đường dẫn cũ; không cần tạo lại khóa hay cấp lại quyền Drive vì thay đổi này.
 
 ## 1. Phạm vi đã chốt
+
+### Sửa lỗi đa thiết bị và giao diện điện thoại 09/11/2026
+
+- Thùng rác “Tất cả Workspace” chứa mọi mục đã xóa thuộc các Workspace trong root, kèm Workspace nguồn để khôi phục đúng cây. Bộ lọc gồm Workspace đang hoạt động và Workspace có mục trong thùng rác; vẫn phải khôi phục cha trước con.
+- Cài đặt ngôn ngữ, theme, kiểu hiển thị, cách sắp xếp và thứ tự Workspace được lưu riêng theo tài khoản + ID browser trong MongoDB. Frontend tự tạo `myhub.device` trong localStorage và gửi header `X-MyHub-Device`; đây không phải thông tin xác thực. Các tab cùng browser/origin dùng chung ID; browser/profile khác hoặc xóa dữ liệu website sẽ có ID mới và cài đặt mặc định. Panel thu gọn được lưu cục bộ trên browser. Không thay đổi schema/index DB hoặc xóa cài đặt cũ; client cũ thiếu header vẫn dùng vùng cài đặt cũ.
+- Frontend nhận SSE có Bearer, không còn polling 2 giây. Service phát tín hiệu sau khi mutation Workspace/file/upload/editor/chia sẻ/revision/settings hoàn tất; frontend chỉ đọc lại cache liên quan, gộp các thay đổi liên tiếp. Upload chunk chỉ phát tín hiệu khi file hoàn tất. Một tab leader chia sẻ kết nối cho các tab cùng browser/user bằng Web Locks/BroadcastChannel khi được hỗ trợ.
+- MongoDB giữ ring/cursor có giới hạn để replay khi reconnect; cursor quá cũ hoặc restart/deploy tạo reset an toàn. Tab nền không tự tải dữ liệu; khi lấy focus, hiển thị lại hoặc có mạng sẽ đối soát. Giữ **một worker** theo cấu hình hiện tại, chưa thêm Redis; hướng mở rộng gồm cả broker và khóa editor/upload được ghi trong tài liệu realtime.
+- Thay đổi trực tiếp trên Drive dùng `changes.watch` khi bật `DRIVE_WEBHOOK_ENABLED=true` trên HTTPS public; app tự gia hạn kênh, xác minh token và chống notification trùng. Worker backend đối soát delta mặc định 300 giây, không theo số thiết bị; local mặc định tắt webhook và chỉ đọc delta khi có subscriber. Hướng dẫn bật trên VPS và giới hạn được ghi trong tài liệu realtime.
+- Bản nháp editor không bị ghi đè bởi đồng bộ. File sạch nhận nội dung mới; file đang sửa báo xung đột để người dùng chọn tải lại/lưu bản sao/ghi đè. File/folder/Workspace bị xóa hoặc chuyển từ máy khác được kiểm tra lại phạm vi; viewer đang có bản nháp không tự đóng. Bảng file rộng cuộn trong vùng riêng trên điện thoại, không làm giãn thanh điều hướng.
+- SSE không yêu cầu thêm dịch vụ hoặc thư viện runtime. Cần cập nhật unit systemd có graceful shutdown cho request dài và bật webhook trong cấu hình production nếu muốn nhận thay đổi Drive trực tiếp nhanh hơn đối soát dự phòng; xem hướng dẫn realtime. CI không tự ghi đè unit root hoặc `.env` trên VPS.
+
+### Chức năng hiện có
 
 - Google `cdtanhh@gmail.com` (email đã xác minh) hoặc GitHub `cdtanhh1807`; tài khoản khác bị từ chối ở backend.
 - Quyền Drive của chủ tài khoản được cấp riêng một lần, refresh token mã hóa trong MongoDB. Đăng nhập GitHub vẫn dùng cùng Drive.
@@ -243,7 +259,7 @@ python -m venv .venv
 Sau đó sinh `ENCRYPTION_KEY` bằng lệnh ở mục 3, hoàn thành `backend/.env`, rồi chạy:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+.\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log --timeout-graceful-shutdown 15
 ```
 
 Dùng trực tiếp Python trong venv nên không cần đổi PowerShell ExecutionPolicy. Nếu muốn kích hoạt venv khi policy cho phép: `.\.venv\Scripts\Activate.ps1`. `--no-access-log` tránh ghi OAuth code và state trong URL callback vào log request. Chạy **một worker** ở v1.
@@ -287,7 +303,7 @@ docker compose ps
 **Windows backend**, ở `backend/`:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+.\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log --timeout-graceful-shutdown 15
 ```
 
 **Windows frontend**, ở `frontend/`:
@@ -308,7 +324,7 @@ docker compose up -d
 cd backend
 python3 -m venv .venv
 .venv/bin/python -m pip install --no-cache-dir -r requirements.txt
-.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log --timeout-graceful-shutdown 15
 
 # Terminal frontend mới, ở gốc repo
 cd frontend
@@ -318,7 +334,7 @@ npm run dev
 
 Lần sau bỏ bước tạo venv/cài dependencies, dùng `docker compose start mongodb`. Không dùng lại venv/node_modules của Windows trên Ubuntu; tạo mới từ requirements/lockfile.
 
-Deploy domain/reverse proxy/HTTPS chưa nằm trong v1. Khi làm bước đó, giữ cùng origin cho frontend/API, đổi URL/CORS/cookie Secure và đăng ký callback tương ứng trên Google/GitHub. API nghiệp vụ đã hỗ trợ `Authorization: Bearer` để tái sử dụng cho client khác; refresh web hiện dùng httpOnly cookie và kiểm tra Origin.
+Production đã được bổ sung ngày 06/11/2026 tại `https://myhub.liamcao.io.vn`, dùng cùng origin cho frontend/API qua Cloudflare Tunnel và Nginx, kèm CI/CD. Quy trình cài đặt, vận hành và chuyển máy nằm trong [MYHUB_DEPLOY_CICD.md](MYHUB_DEPLOY_CICD.md). API nghiệp vụ dùng `Authorization: Bearer`; refresh web dùng httpOnly cookie và kiểm tra Origin. Các lệnh local ở trên vẫn chạy thủ công.
 
 ## 8. Backup, restore, chuyển máy
 
@@ -394,6 +410,8 @@ Nếu mất encryption key, cấp Drive lại. Mất MongoDB không làm mất f
 | `app/models/records.py` | Model nội bộ cho stream nguồn dữ liệu |
 | `app/dtos/contracts.py` | DTO Request/Response/file/list/stream và validation |
 | `app/controllers/auth.py`, `workspaces.py`, `files.py` | Router auth/Workspace/settings/file/preview/share; tạo DTO trước khi gọi Service |
+| `app/controllers/sync.py`, `app/services/sync.py` | SSE có xác thực, ring Mongo/replay, batching và fallback status |
+| `app/dtos/sync.py`, `app/services/drive_sync.py` | DTO sự kiện/cursor/webhook và worker đọc Drive delta, lọc root, gia hạn channel |
 | `app/services/auth.py` | Whitelist, state/PKCE, phiên JWT/refresh, Drive credential mã hóa |
 | `app/services/scope.py` | Duyệt chuỗi cha, bảo vệ root/Workspace/system/shortcut |
 | `app/services/workspaces.py` | Workspace CRUD, thứ tự/settings, snapshot xóa hai bước |
@@ -415,7 +433,11 @@ Nếu mất encryption key, cấp Drive lại. Mất MongoDB không làm mất f
 | `src/components/Select.tsx` | Dropdown/listbox bo góc dùng chung, keyboard, typeahead và portal trong dialog |
 | `src/features/workspaces/WorkspaceSwitcher.tsx` | Chọn Workspace trực tiếp trên Panel bằng Drive folder ID |
 | `src/services/api.ts` | Adapter API duy nhất, refresh đồng thời, media cookie/download |
-| `src/store/session.ts`, `hooks/usePreferences.ts` | Zustand token trong RAM, setting Mongo và theme theo hệ thống |
+| `src/store/session.ts`, `hooks/usePreferences.ts` | Zustand token trong RAM, setting Mongo theo browser và theme theo hệ thống |
+| `src/services/device.ts`, `src/hooks/useLiveSync.ts` | ID browser riêng cho cài đặt; SSE leader nhiều tab, backoff và kết nối lại |
+| `src/services/sync.ts` | Parser SSE UTF-8 có giới hạn, chọn cache liên quan và gộp cập nhật |
+| `backend/tests/test_sse.py`, `test_drive_sync.py` | Kiểm tra replay/batching/tài nguyên SSE và delta/webhook giả lập |
+| `backend/tests/test_sync_preferences.py`, `frontend/tests/sync.spec.ts` | Hồi quy thùng rác, cài đặt độc lập, sync nhiều browser, bản nháp và bảng file trên smartphone |
 | `src/i18n/index.ts`, `theme/app.css` | Việt/Anh, token sáng/tối và layout theo orientation |
 | `src/types/index.ts`, `utils/format.ts` | Hợp đồng TypeScript và định dạng size/time |
 | `frontend/playwright.config.ts`, `tests/app.spec.ts` | Kiểm thử Edge có API giả lập, không dùng tài khoản Drive thật |
