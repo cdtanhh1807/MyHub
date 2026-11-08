@@ -1,12 +1,17 @@
 """HTTP dependency ở rìa hệ thống; Service không biết cookie/header."""
 import re
-from fastapi import Request
+from fastapi import Header, Request
 from app.core.errors import AppError
 
 
 def services(request: Request):
     """Lấy container được tạo trong lifespan, thuận tiện thay fake khi test."""
     return request.app.state.services
+
+
+def device_id(value: str | None = Header(default=None, alias='X-MyHub-Device', min_length=1, max_length=80, pattern=r'^[A-Za-z0-9_-]+$')):
+    """Định danh browser chỉ phân vùng cài đặt/kênh SSE, không dùng thay xác thực."""
+    return value
 
 
 async def current_user(request: Request):

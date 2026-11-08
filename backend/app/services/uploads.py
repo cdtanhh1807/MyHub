@@ -17,6 +17,7 @@ class UploadService:
         self.mongo, self.drive, self.scope = mongo, drive, scope
         self.cipher = Fernet(settings.encryption_key.encode())
         self.lock = asyncio.Lock()
+        self.sync = None
 
     @staticmethod
     def response(record):
@@ -48,10 +49,14 @@ class UploadService:
 
     async def persist(self, record, offset, file):
         """Lưu offset Google xác nhận; chỉ đánh dấu hoàn tất khi metadata hợp lệ."""
+        completed = file is not None and record.get('file') is None
         record['offset'] = offset
         if file is not None:
             record['file'] = FileDTO(**file).model_dump()
         await self.mongo.put('upload_sessions', record['_id'], record)
+        # Chỉ lần hoàn tất đầu tiên phát event, kể cả hoàn tất được phát hiện bằng GET sau mất ACK.
+        if completed and self.sync:
+            await self.sync.file_changed(record['workspace_id'], file)
         return self.response(record)
 
     async def status(self, workspace_id, upload_id, user_id):

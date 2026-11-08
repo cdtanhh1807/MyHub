@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useSession } from '../store/session';
 import { api } from '../services/api';
 import type { Preferences } from '../types';
+import { deviceId } from '../services/device';
 
-// Tải cài đặt Mongo, đồng bộ theme/ngôn ngữ giữa thiết bị khi cửa sổ lấy focus.
+// Cài đặt Mongo được phân vùng theo browser; các thiết bị không ghi đè theme/ngôn ngữ của nhau.
 export function usePreferences() {
   const { user, preferences, set } = useSession();
   const { i18n } = useTranslation();
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ['settings', user?.id], enabled: !!user, queryFn: async () => (await api.get('/settings')).data.data as Preferences });
+  const query = useQuery({ queryKey: ['settings', user?.id, deviceId], enabled: !!user, queryFn: async () => (await api.get('/settings')).data.data as Preferences });
   useEffect(() => { if (query.data) set({ preferences: query.data }); }, [query.data, set]);
   useEffect(() => {
     void i18n.changeLanguage(preferences.language);
@@ -26,7 +27,7 @@ export function usePreferences() {
     const next = { ...useSession.getState().preferences, ...values };
     await api.put('/settings', next);
     set({ preferences: next });
-    client.setQueryData(['settings', user?.id], next);
+    client.setQueryData(['settings', user?.id, deviceId], next);
     await client.invalidateQueries({ queryKey: ['workspaces'] });
   }
   return { preferences, update };

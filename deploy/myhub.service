@@ -11,7 +11,7 @@ Type=simple
 User=myhub
 Group=myhub
 WorkingDirectory=/opt/myhub/current/backend
-ExecStart=/opt/myhub/current/backend/.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log
+ExecStart=/opt/myhub/current/backend/.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log --timeout-graceful-shutdown 15
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=120

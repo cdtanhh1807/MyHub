@@ -23,7 +23,9 @@ from app.services.sharing import SharingService
 from app.services.preview import PreviewService
 from app.services.archive import ArchiveService
 from app.services.uploads import UploadService
-from app.controllers import auth, files, workspaces
+from app.controllers import auth, files, workspaces, sync
+from app.services.sync import SyncService
+from app.services.drive_sync import DriveSyncService
 
 
 def create_app(settings=None, service_override=None):
@@ -35,7 +37,15 @@ def create_app(settings=None, service_override=None):
         """Mở pool → tạo Service container → giải phóng tất cả pool khi dừng."""
         if service_override:
             app.state.services = service_override
-            yield
+            app.state.sync = SyncService(settings, service_override.mongo, service_override.auth)
+            app.state.drive_sync = DriveSyncService(settings, service_override.mongo, service_override.drive, service_override.scope, app.state.sync)
+            for name in ('auth', 'workspaces', 'files', 'sharing', 'uploads'):
+                getattr(service_override, name).sync = app.state.sync
+            await app.state.sync.start()
+            try:
+                yield
+            finally:
+                await app.state.sync.close()
             return
         mongo = MongoRepository(settings)
         async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as http:
@@ -49,14 +59,26 @@ def create_app(settings=None, service_override=None):
                 uploads=UploadService(settings, mongo, drive, scope), mongo=mongo)
             try:
                 await mongo.initialize()
+                app.state.sync = SyncService(settings, mongo, app.state.services.auth)
+                for name in ('auth', 'workspaces', 'files', 'sharing', 'uploads'):
+                    getattr(app.state.services, name).sync = app.state.sync
+                await app.state.sync.start()
+                app.state.drive_sync = DriveSyncService(settings, mongo, drive, scope, app.state.sync)
+                app.state.sync.activity = app.state.drive_sync.wake.set
+                app.state.drive_sync.start()
                 yield
             finally:
+                if getattr(app.state, 'drive_sync', None):
+                    await app.state.drive_sync.close()
+                if getattr(app.state, 'sync', None):
+                    await app.state.sync.close()
                 await mongo.close()
 
     app = FastAPI(title='MyHub API', version='0.1.0', lifespan=lifespan)
     app.state.settings = settings
+    app.state.sync = None
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
-        allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allow_headers=['Authorization', 'Content-Type', 'Range'],
+        allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allow_headers=['Authorization', 'Content-Type', 'Range', 'X-MyHub-Device', 'Last-Event-ID'],
         expose_headers=['Content-Disposition', 'Content-Length', 'Content-Range', 'Accept-Ranges'])
 
     @app.middleware('http')
@@ -66,7 +88,7 @@ def create_app(settings=None, service_override=None):
         if not request.url.path.endswith('/upload') and (not length.isdecimal() or int(length) > 24 * 1024 * 1024):
             return JSONResponse({'error': {'code': 'request_too_large'}}, status_code=413)
         response = await call_next(request)
-        response.headers['Cache-Control'] = 'private, no-store'
+        response.headers['Cache-Control'] = 'private, no-store, no-transform' if response.headers.get('content-type', '').startswith('text/event-stream') else 'private, no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         return response
@@ -98,7 +120,7 @@ def create_app(settings=None, service_override=None):
         release_file = Path(__file__).resolve().parents[2] / 'RELEASE'
         return {'status': 'ok', 'version': '0.1.0', 'release': release_file.read_text().strip() if release_file.is_file() else 'local'}
 
-    for controller in (auth.router, workspaces.router, files.router):
+    for controller in (auth.router, workspaces.router, files.router, sync.router):
         app.include_router(controller, prefix='/api/v1')
     return app
 

@@ -40,6 +40,13 @@ export function Files({ onAction }: { onAction: (action: string, file?: DriveFil
   const query = useQuery({ queryKey: ['files', workspace.id, folderId, search, sort, direction], queryFn: async () => (await api.get(`/workspaces/${workspace.id}/files`, { params: { parent_id: folderId, search, sort, direction } })).data as FileList });
   useEffect(() => () => uploadController.current?.abort(), [workspace.id]);
   useEffect(() => { setSearch(''); }, [folderId]);
+  useEffect(() => {
+    // Folder b? x?a/di chuy?n b?i thi?t b? kh?c: quay v? Workspace thay v? k?t ? URL c?.
+    if (folderId !== workspace.id && query.isError && ['outside_workspace', 'drive_error_404', 'not_a_folder'].includes(errorCode(query.error))) {
+      setParams({ workspace: workspace.id }, { replace: true });
+    }
+  }, [query.isError, query.error, folderId, workspace.id, setParams]);
+
   function navigateFolder(id: string) {
     // Giữ Workspace trong URL, chỉ thay folder khi người dùng đi vào breadcrumb.
     setParams({ workspace: workspace.id, folder: id });

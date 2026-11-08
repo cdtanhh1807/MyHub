@@ -48,6 +48,39 @@ class FakeMongo:
         record = self.documents.pop((collection, key), None)
         return record if record and record['expires_at'] > datetime.now(timezone.utc) else None
 
+    async def sync_append(self, root, epoch, event, limit):
+        """Ring giả cho test replay/concurrency; không kết nối Mongo người dùng."""
+        key = ('sync_log', root)
+        record = self.documents.setdefault(key, {'_id': root, 'epoch': epoch, 'sequence': 0, 'events': []})
+        record['sequence'] += 1
+        record['events'] = [*record['events'], copy.deepcopy(event)][-limit:]
+        return {'epoch': record['epoch'], 'sequence': record['sequence']}
+
+    async def drive_index_get(self, keys):
+        """Đọc batch index giả lập, không dùng DB thật."""
+        return {key: await self.get('drive_sync_index', key) for key in keys if ('drive_sync_index', key) in self.documents}
+
+    async def drive_index_put(self, records):
+        """Ghi metadata dẫn xuất giả lập cho các test move-out/tombstone."""
+        for row in records:
+            await self.put('drive_sync_index', row['_id'], row)
+
+    async def drive_notification(self, root, channel_id, number):
+        """Mô phỏng CAS message number; webhook trùng không được đánh thức worker lần nữa."""
+        record = self.documents.get(('drive_sync_state', root), {})
+        channel = next((row for row in record.get('channels', []) if row['id'] == channel_id), None)
+        if not channel or channel['last_message'] >= number:
+            return False
+        channel['last_message'] = number
+        record['dirty'] = True
+        return True
+
+    async def drive_channel_ready(self, root, channel_id, resource_id, expires):
+        """Cập nhật resource/expiry giữ nguyên counter đã nhận trong callback sớm."""
+        record = self.documents[('drive_sync_state', root)]
+        channel = next(row for row in record['channels'] if row['id'] == channel_id)
+        channel.update(resource_id=resource_id, expires=expires)
+
 
 class FakeDrive:
     """Cây Drive có cả file ngoài root, system folder và workspace khác."""

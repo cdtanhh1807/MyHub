@@ -142,12 +142,18 @@ def test_http_upload_auth_chunk_limit_and_completed_replay(container, settings, 
         body = {'parent_id': 'sub', 'name': 'test.txt', 'size': 5, 'mime': 'text/plain'}
         assert client.post(path, json=body).status_code == 401
         client.headers['Authorization'] = 'Bearer ' + token
+        before_begin = client.get('/api/v1/sync').json()['data']['revision']
         response = client.post(path, json=body)
         assert response.status_code == 201 and 'secret' not in response.text
+        assert client.get('/api/v1/sync').json()['data']['revision'] == before_begin
         url = path + '/' + response.json()['data']['upload_id']
         assert client.put(url + '?offset=0', content=b'hello', headers={'Content-Length': str(CHUNK_SIZE + 1)}).status_code == 422
+        previous = client.get('/api/v1/sync').json()['data']['revision']
         assert client.put(url + '?offset=0', content=b'hello').json()['data']['complete']
+        assert client.get('/api/v1/sync').json()['data']['revision'] != previous
+        completed_revision = client.get('/api/v1/sync').json()['data']['revision']
         assert client.put(url + '?offset=0', content=b'hello').json()['data']['file']['id'] == 'uploaded'
         assert client.get(url).json()['data']['complete']
         assert client.delete(url).status_code == 200
+        assert client.get('/api/v1/sync').json()['data']['revision'] == completed_revision
         assert client.get(url).status_code == 404

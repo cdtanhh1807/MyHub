@@ -3,6 +3,7 @@ export interface DriveFile {
   id: string; name: string; mimeType: string; size?: string | null;
   createdTime?: string; modifiedTime?: string; version?: string; webViewLink?: string;
   parents: string[]; trashed?: boolean; permissions: Permission[];
+  workspace_id?: string; workspace_name?: string;
 }
 export interface Permission { id: string; type: string; role: string; emailAddress?: string; displayName?: string }
 export interface User { id: string; provider: string; name: string; identity: string; avatar?: string }

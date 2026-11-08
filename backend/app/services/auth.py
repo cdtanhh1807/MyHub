@@ -18,6 +18,7 @@ class AuthService:
     def __init__(self, settings, mongo, oauth, drive):
         """Ghép các repository để xử lý auth và kết nối Drive riêng biệt."""
         self.settings, self.mongo, self.oauth, self.drive = settings, mongo, oauth, drive
+        self.sync = None
 
     def allowed(self, provider, profile):
         """Google cần email verified; GitHub chỉ đối chiếu login, không dùng numeric ID."""
@@ -59,6 +60,8 @@ class AuthService:
             encrypted = Fernet(self.settings.encryption_key.encode()).encrypt(token['refresh_token'].encode()).decode()
             await self.mongo.put('drive_credentials', 'owner', {'email': profile['email'], 'encrypted_token': encrypted})
             self.drive._token, self.drive._expires = '', 0
+            if self.sync:
+                await self.sync.changed(kind='connection')
             return ResultDTO(data={'drive_connected': True})
         identity = profile['email'] if provider == 'google' else profile['login']
         user = {'id': f'{provider}:{identity.lower()}', 'provider': provider, 'identity': identity,
@@ -89,16 +92,21 @@ class AuthService:
 
     async def authenticate(self, access):
         """Verify thuật toán/issuer/audience/expiry → kiểm tra phiên còn hoạt động."""
+        payload = self.claims(access)
+        user = await self.user_for_session(payload['sid'])
+        if user['id'] != payload['sub']:
+            raise AppError('unauthorized', 401)
+        return user
+
+    def claims(self, access):
+        """Kiểm tra JWT dùng chung cho HTTP và thời hạn stream, không lưu token hoặc đưa vào URL."""
         try:
             payload = jwt.decode(access, self.settings.jwt_secret_key, algorithms=['HS256'], issuer='myhub', audience='myhub-api', options={'require': ['exp', 'iat', 'sub', 'sid', 'type']})
             if payload['type'] != 'access':
                 raise jwt.InvalidTokenError()
         except jwt.PyJWTError:
             raise AppError('unauthorized', 401) from None
-        user = await self.user_for_session(payload['sid'])
-        if user['id'] != payload['sub']:
-            raise AppError('unauthorized', 401)
-        return user
+        return payload
 
     async def refresh(self, refresh):
         """Xoay refresh một lần bằng consume nguyên tử, token cũ không tái sử dụng được."""
@@ -114,6 +122,8 @@ class AuthService:
         """Thu hồi session tương ứng nên access JWT liên quan cũng mất hiệu lực."""
         if refresh:
             await self.mongo.remove('refresh_sessions', digest(refresh))
+            if self.sync:
+                await self.sync.changed(kind='session', session_id=digest(refresh))
         return ResultDTO(data={'logged_out': True})
 
     async def connection(self):

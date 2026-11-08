@@ -55,7 +55,7 @@ class DriveRepository:
     def check(response):
         """Không đưa response Google có thông tin nội bộ ra phía trình duyệt."""
         if response.status_code >= 400:
-            status = response.status_code if response.status_code in (403, 404, 409, 412, 416, 429) else 502
+            status = response.status_code if response.status_code in (403, 404, 409, 410, 412, 416, 429) else 502
             raise AppError('conflict' if status == 412 else f'drive_error_{status}', status)
 
     async def get(self, file_id):
@@ -83,6 +83,23 @@ class DriveRepository:
     async def trash_candidates(self):
         """Lấy metadata thùng rác; Service kiểm tra lại phạm vi từng mục."""
         return await self.list_query('trashed = true')
+
+    async def changes_start(self):
+        """Lấy mốc feed hiện tại, không quét toàn bộ file trên tài khoản Drive."""
+        return (await self.request('GET', 'changes/startPageToken')).json()['startPageToken']
+
+    async def changes_page(self, cursor):
+        """Đọc một trang delta có cả mất quyền/xóa; Service lưu cursor sau khi phát sự kiện."""
+        return (await self.request('GET', 'changes', params={'pageToken': cursor, 'pageSize': 100,
+            'includeRemoved': 'true', 'fields': f'nextPageToken,newStartPageToken,changes(fileId,removed,file({FIELDS}))'})).json()
+
+    async def changes_watch(self, cursor, channel):
+        """Đăng ký HTTPS webhook với token ngẫu nhiên; không ghi URL/token vào log."""
+        return (await self.request('POST', 'changes/watch', params={'pageToken': cursor}, json=channel)).json()
+
+    async def stop_watch(self, channel_id, resource_id):
+        """Dừng kênh cũ sau khi kênh thay thế đã được tạo thành công."""
+        await self.request('POST', 'channels/stop', json={'id': channel_id, 'resourceId': resource_id})
 
     async def create_folder(self, name, parent, system=False):
         """Tạo folder trên Drive, đánh dấu folder hệ thống để ẩn khỏi Workspace."""

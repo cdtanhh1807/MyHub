@@ -22,7 +22,13 @@ async function mockApi(page: Page, conflict = false, kind = 'text', multipleWork
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
     const method = request.method();
     let data: unknown;
-    if (path === '/auth/refresh') data = { data: { access_token: 'ui-test-only', user: { id: 'google:cdtanhh@gmail.com', provider: 'google', identity: 'cdtanhh@gmail.com', name: 'Thanh Đạt' } } };
+    if (path === '/sync/events') {
+      const cursor = 'a'.repeat(32) + ':1';
+      const event = request.headers()['last-event-id'] === cursor ? 'ready' : 'reset';
+      await route.fulfill({ contentType: 'text/event-stream', body: `id: ${cursor}\nevent: ${event}\ndata: {"changes":[]}\n\n` }); return;
+    }
+    if (path === '/sync') data = { data: { revision: 'mock:1' } };
+    else if (path === '/auth/refresh') data = { data: { access_token: 'ui-test-only', user: { id: 'google:cdtanhh@gmail.com', provider: 'google', identity: 'cdtanhh@gmail.com', name: 'Thanh Đạt' } } };
     else if (path === '/settings') {
       if (method === 'PUT') preferences = request.postDataJSON();
       data = { data: preferences };
@@ -62,6 +68,7 @@ async function mockApi(page: Page, conflict = false, kind = 'text', multipleWork
         return;
       }
     }
+    else if (/^\/workspaces\/[^/]+\/files\/[^/]+$/.test(path) && method === 'GET') data = file;
     else if (path.endsWith('/preview')) data = { data: { kind, preview_url: 'https://drive.google.com/file/d/text/preview', edit_url: 'https://drive.google.com/file/d/text/view' } };
     else if (path.endsWith('/content') && kind === 'pdf') { await route.fulfill({ contentType: 'application/pdf', body: pdfFixture() }); return; }
     else if (path.endsWith('/access')) data = { data: { ready: true } };

@@ -15,6 +15,7 @@ import { NameDialog, DeleteDialog, TransferDialog, ShareDialog, ArchiveDialog, H
 import type { DriveFile, FileList, Preferences } from '../types';
 
 import { WorkspaceSwitcher } from '../features/workspaces/WorkspaceSwitcher';
+import { useLiveSync } from '../hooks/useLiveSync';
 
 const Viewer = lazy(() => import('../features/preview/Viewer'));
 
@@ -49,6 +50,7 @@ function Shell() {
   const { t } = useTranslation();
   const { user, workspace, collapsed, set } = useSession();
   usePreferences();
+  useLiveSync();
   const [accountOpen, setAccountOpen] = useState(false);
   const [action, setAction] = useState<{ type: string; file?: DriveFile } | null>(null);
   const { run } = useFeedback();
@@ -58,13 +60,21 @@ function Shell() {
   const [params] = useSearchParams();
   const connection = useQuery({ queryKey: ['connection'], queryFn: async () => (await api.get('/drive-connection')).data.data as { connected: boolean; reason?: string } });
   const workspaces = useQuery({ queryKey: ['workspaces'], enabled: !!connection.data?.connected, queryFn: async () => (await api.get('/workspaces')).data as FileList });
+  // C?c dialog ?ang m? c?ng nh?n metadata m?i; l?i ph?m vi kh?ng t? ??ng form ?ang nh?p.
+  const actionMetadata = useQuery({ queryKey: ['metadata', workspace?.id, action?.file?.id],
+    enabled: !!workspace && !!action?.file?.id && !['workspaceCreate', 'workspaceRename', 'workspaceDelete', 'folderCreate', 'open'].includes(action.type),
+    queryFn: async () => (await api.get(`/workspaces/${workspace!.id}/files/${action!.file!.id}`)).data as DriveFile });
+  const actionFile = actionMetadata.data || action?.file;
+
   useEffect(() => {
     // URL lưu ID Workspace; dữ liệu luôn lấy lại từ Drive để đổi tên bên ngoài cũng hiện đúng.
     const requested = params.get('workspace');
     if (!workspaces.data) return;
     const found = workspaces.data.files.find(item => item.id === (requested || workspace?.id));
     if (found && (workspace?.id !== found.id || workspace?.name !== found.name)) set({ workspace: found });
-  }, [workspaces.data, params, workspace?.id, workspace?.name, set]);
+    // Workspace bị xóa từ máy khác: bỏ lựa chọn cũ; giữ viewer đang mở để không mất bản nháp.
+    if (!found && workspace && !action) { set({ workspace: null }); if (location.pathname === '/files') navigate('/workspaces', { replace: true }); }
+  }, [workspaces.data, params, workspace?.id, workspace?.name, set, action, location.pathname, navigate]);
   function choose(file: DriveFile) { set({ workspace: file }); navigate(`/files?workspace=${file.id}`); }
   function closeAction() { setAction(null); }
   function done() {
@@ -82,7 +92,7 @@ function Shell() {
   return <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}><aside className="sidebar"><div className="sidebar-top"><Brand compact={collapsed} /><button className="icon-button collapse-button" aria-label={t('collapse')} onClick={() => set({ collapsed: !collapsed })}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button></div><WorkspaceSwitcher workspaces={workspaces.data?.files || []} selected={workspace} onSelect={choose} /><span className="navigation-label">MY HUB</span><nav className="main-navigation">{navigation.map(({ path, key, icon: Icon }) => <NavLink key={key} className={({ isActive }) => `nav-item ${isActive && !(key === 'files' && !workspace) ? 'active' : ''} ${key === 'files' && !workspace ? 'disabled' : ''}`} to={key === 'files' && !workspace ? '/workspaces' : path}><Icon size={20} /><span>{t(key)}</span>{key === 'workspaces' && <small>{workspaces.data?.files.length ?? '—'}</small>}</NavLink>)}<button className="nav-item mobile-account" onClick={() => setAccountOpen(true)}><UserRound size={20} /><span>{t('account')}</span></button></nav><div className="sidebar-bottom"><div className="drive-status"><Cloud size={18} /><span>{t(connection.data?.connected ? 'connected' : 'connect')}</span><span className={`dot ${!connection.data?.connected ? 'offline' : ''}`} /></div><button className="account-trigger" onClick={() => setAccountOpen(true)}><Avatar /><span><strong>{user!.name}</strong><small>{user!.identity}</small></span><ChevronDown size={15} /></button><button className="sidebar-logout" onClick={() => void run(async () => { await api.post('/auth/logout'); set({ user: null, token: null, workspace: null }); client.clear(); })}><LogOut size={15} /><span>{t('logout')}</span></button></div></aside>
     <div className="main-column"><header className="topbar"><div><span className="muted">MyHub</span><ChevronDown size={12} className="topbar-chevron" /><strong>{t(location.pathname.startsWith('/files') ? 'files' : location.pathname.startsWith('/trash') ? 'trash' : 'workspaces')}</strong></div><span className="private-label"><ShieldCheck size={14} />{t('private')}</span><button className="mobile-profile" aria-label={t('account')} onClick={() => setAccountOpen(true)}><Avatar /></button></header><main className="main-content">{connection.isPending ? <Loading /> : connection.isError ? <Empty title={t(errorCode(connection.error), { defaultValue: t('error') })} action={<button className="secondary" onClick={() => void connection.refetch()}>{t('retry')}</button>} /> : !connection.data.connected ? <div className="connect-card"><span className="connect-icon"><Cloud size={42} strokeWidth={1.3} /></span><span className="eyebrow">GOOGLE DRIVE × MYHUB</span><h1>{t('connectTitle')}</h1><p>{t('connectDescription')}</p>{connection.data.reason && connection.data.reason !== 'drive_not_connected' && <p className="error-text">{t(connection.data.reason, { defaultValue: t('error') })}</p>}<button className="primary" onClick={() => void run(async () => { const response = await api.post('/drive-connection/authorize'); window.location.assign(response.data.data.url); })}>{t('connect')}<ArrowUpRight size={18} /></button></div> : workspaces.isPending ? <Loading /> : workspaces.isError ? <Empty title={t(errorCode(workspaces.error), { defaultValue: t('error') })} action={<button className="secondary" onClick={() => void workspaces.refetch()}>{t('retry')}</button>} /> : <Routes><Route path="/workspaces" element={<Workspaces files={workspaces.data.files} onSelect={choose} onAction={onAction} />} /><Route path="/files" element={workspace ? <Files key={workspace.id} onAction={onAction} /> : <Navigate to="/workspaces" replace />} /><Route path="/trash" element={<Trash />} /><Route path="*" element={<Navigate to="/workspaces" replace />} /></Routes>}</main><footer className="app-footer"><span>MyHub <span className="muted">/</span> v0.1</span><span>{t('tagline')}</span></footer></div>
     {accountOpen && <Account onClose={() => setAccountOpen(false)} />}
-    {action && (['workspaceCreate', 'workspaceRename', 'folderCreate', 'rename'].includes(action.type) ? <NameDialog {...action} action={action.type} onClose={closeAction} onDone={done} /> : ['workspaceDelete', 'delete'].includes(action.type) ? <DeleteDialog file={action.file} workspaceDelete={action.type === 'workspaceDelete'} onClose={closeAction} onDone={done} /> : action.type === 'share' ? <ShareDialog file={action.file} onClose={closeAction} onDone={done} /> : action.type === 'move' || action.type === 'copy' ? <TransferDialog file={action.file} mode={action.type} onClose={closeAction} onDone={done} /> : action.type === 'archive' ? <ArchiveDialog file={action.file} onClose={closeAction} onDone={done} /> : action.type === 'history' ? <HistoryDialog file={action.file} onClose={closeAction} onDone={done} /> : action.type === 'details' ? <DetailsDialog file={action.file} onClose={closeAction} onDone={done} /> : action.type === 'open' ? <Suspense fallback={<Modal title={t('loading')} onClose={closeAction}><Loading /></Modal>}><Viewer file={action.file!} siblings={siblings} onClose={closeAction} onSelect={file => setAction({ type: 'open', file })} onChanged={() => { void client.invalidateQueries({ queryKey: ['files'] }); }} /></Suspense> : null)}
+    {action && (['workspaceCreate', 'workspaceRename', 'folderCreate', 'rename'].includes(action.type) ? <NameDialog {...action} file={actionFile} action={action.type} onClose={closeAction} onDone={done} /> : ['workspaceDelete', 'delete'].includes(action.type) ? <DeleteDialog file={actionFile} workspaceDelete={action.type === 'workspaceDelete'} onClose={closeAction} onDone={done} /> : action.type === 'share' ? <ShareDialog file={actionFile} onClose={closeAction} onDone={done} /> : action.type === 'move' || action.type === 'copy' ? <TransferDialog file={actionFile} mode={action.type} onClose={closeAction} onDone={done} /> : action.type === 'archive' ? <ArchiveDialog file={actionFile} onClose={closeAction} onDone={done} /> : action.type === 'history' ? <HistoryDialog file={actionFile} onClose={closeAction} onDone={done} /> : action.type === 'details' ? <DetailsDialog file={actionFile} onClose={closeAction} onDone={done} /> : action.type === 'open' ? <Suspense fallback={<Modal title={t('loading')} onClose={closeAction}><Loading /></Modal>}><Viewer file={action.file!} siblings={siblings} onClose={closeAction} onSelect={file => setAction({ type: 'open', file })} onChanged={() => { void client.invalidateQueries({ queryKey: ['files'] }); }} /></Suspense> : null)}
   </div>;
 }
 
